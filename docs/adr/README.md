@@ -13,6 +13,7 @@ One file per decision, numbered, never rewritten: a later ADR supersedes an earl
 | [0006](0006-gateway-consumes-every-partition.md) | Every gateway reads every seat-events partition, with a pure-Rust client | Accepted |
 | [0007](0007-trace-context-in-the-outbox.md) | Trace context is stored in the outbox row and restored by the relay | Accepted |
 | [0008](0008-single-origin-through-the-gateway.md) | The gateway serves the frontend: one origin for pages, API and WebSocket | Accepted |
+| [0009](0009-chaos-judges-correctness-after-settling.md) | Chaos runs judge correctness after the system settles, not availability during the fault | Accepted |
 
 Template: **Context** (what forces the decision) → **Decision** → **Consequences**
 (what gets easier, what gets harder, what we'll watch).

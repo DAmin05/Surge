@@ -164,3 +164,15 @@ services:
     ulimits: *many-sockets
     depends_on:
       gateway: { condition: service_healthy }
+
+  # k6 buyers (`make load`, chaos scenarios): not part of the normal stack.
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["load"]
+    working_dir: /loadtest
+    environment:
+      BASE_URL: http://gateway:8080
+      K6_NO_USAGE_REPORT: "true"
+    volumes: ["../loadtest:/loadtest:ro"]
+    depends_on:
+      gateway: { condition: service_healthy }

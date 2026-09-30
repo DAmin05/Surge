@@ -59,6 +59,8 @@ public final class OutboxRelay implements AutoCloseable {
     private final KafkaProducer<String, String> producer;
     private final int batchSize;
     private final JsonMapper json = JsonMapper.builder().build();
+    /** Chaos only: a paused relay leaves rows in the outbox until resumed. */
+    private volatile boolean paused;
 
     public OutboxRelay(JdbcClient jdbc, TransactionTemplate tx, MeterRegistry meters,
             @Value("${surge.order.kafka-bootstrap}") String bootstrap,
@@ -78,10 +80,25 @@ public final class OutboxRelay implements AutoCloseable {
                 new StringSerializer(), new StringSerializer());
         // How far behind the relay is: the age of the oldest unpublished event.
         Gauge.builder("outbox_oldest_unpublished_seconds", this, OutboxRelay::lagSeconds).register(meters);
+        Gauge.builder("outbox_relay_paused", this, r -> r.paused ? 1 : 0).register(meters);
+    }
+
+    public boolean paused() {
+        return paused;
+    }
+
+    public void setPaused(boolean paused) {
+        if (this.paused != paused) {
+            log.warn("outbox relay {}", paused ? "PAUSED" : "resumed");
+        }
+        this.paused = paused;
     }
 
     @Scheduled(fixedDelayString = "${surge.order.outbox-poll-interval}")
     public void relay() {
+        if (paused) {
+            return;
+        }
         try {
             // Drain: keep going while full batches come back.
             while (publishBatch() == batchSize) {

@@ -44,10 +44,14 @@ class Fake:
     async def reset(self) -> None:
         self.calls.append(("faults-reset",))
 
+    # order
+    async def set_relay_paused(self, paused: bool) -> None:
+        self.calls.append(("relay-paused", paused))
+
 
 def controller() -> tuple[Controller, Fake]:
     f = Fake()
-    return Controller(Backends(containers=f, toxiproxy=f, payment=f)), f
+    return Controller(Backends(containers=f, toxiproxy=f, payment=f, order=f)), f
 
 
 def test_timed_action_heals_itself_and_is_logged() -> None:
@@ -103,3 +107,36 @@ def test_actions_without_undo_end_immediately() -> None:
 
 def test_api_needs_a_configured_controller() -> None:
     assert TestClient(app).get("/actions").status_code == 503
+
+
+def test_relay_pause_resumes_after_its_duration() -> None:
+    async def run() -> None:
+        c, f = controller()
+        await c.run("pause-outbox-relay", duration_s=0.05)
+        assert f.calls == [("relay-paused", True)]
+        await asyncio.sleep(0.1)
+        assert f.calls == [("relay-paused", True), ("relay-paused", False)]
+
+    asyncio.run(run())
+
+
+def test_late_successes_land_after_timeout_and_grace(monkeypatch: Any) -> None:
+    monkeypatch.setenv("PAYMENT_TIMEOUT", "PT10S")
+    monkeypatch.setenv("PIN_GRACE", "PT10S")
+
+    async def run() -> None:
+        c, f = controller()
+        event = await c.run("payment-timeouts", duration_s=0.01)
+        assert f.calls[0] == ("faults", {"timeout_rate": 0.5, "timeout_delay_s": 25.0})
+        assert event.detail == "late successes after 25 s"
+
+    asyncio.run(run())
+
+
+def test_iso_durations() -> None:
+    from surge_chaos.actions import seconds
+
+    assert seconds("PT2M") == 120
+    assert seconds("PT30S") == 30
+    assert seconds("PT1M30S") == 90
+    assert seconds("PT0.5S") == 0.5

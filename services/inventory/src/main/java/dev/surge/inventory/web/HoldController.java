@@ -7,6 +7,7 @@ import java.util.Map;
 import dev.surge.inventory.hold.HoldResult;
 import dev.surge.inventory.hold.HoldService;
 import dev.surge.inventory.hold.Snapshot;
+import io.lettuce.core.RedisException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -55,6 +56,13 @@ public class HoldController {
     @GetMapping("/sections/{eventId}/{section}/snapshot")
     public Snapshot snapshot(@PathVariable long eventId, @PathVariable String section) {
         return holds.snapshot(eventId, section);
+    }
+
+    /** Redis unreachable or failing over: the client should retry, not give up. */
+    @ExceptionHandler(RedisException.class)
+    public ResponseEntity<Map<String, String>> redisUnavailable(RedisException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "1")
+                .body(Map.of("error", "RETRY_LATER"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

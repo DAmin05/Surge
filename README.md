@@ -29,6 +29,8 @@ make seed      # create an event: 10 sections x 1,000 seats (prints the event id
 make smoke     # end-to-end: hold race on the cluster, checkout, saga to CONFIRMED, events
 make audit     # run the invariants now
 make e2e       # browser buyer flow (Playwright) + one trace across all services
+EVENT_ID=1 make load   # k6 buyers through the gateway
+make up-chaos && make chaos   # every chaos scenario under load, 0 violations required
 make ws-bench  # 10k WebSocket clients vs. seat updates (start the stack with
                #   WS_CONNECT_PER_IP_PER_SEC=100000 so one IP may open 10k sockets)
 make help      # everything else
@@ -63,7 +65,7 @@ chaos/              Python: Docker SDK + Toxiproxy
 frontend/           Next.js: buyer flow, war room, chaos panel
 proto/              gRPC contracts
 schemas/            event JSON schemas
-loadtest/           k6 scenarios (week 5)
+loadtest/           k6 buyer scenarios
 infra/              compose files, Postgres bootstrap, Redis/Redpanda init, observability
 docs/               design spec, ADRs, results
 ```
@@ -82,7 +84,7 @@ Each phase ships as one PR whose exit criterion is a required CI check.
   *Exit: 10k WebSocket clients get seat updates < 200 ms p99 locally.*
 - [x] **Week 4**: Frontend (buyer flow, war room, chaos panel), OTel, metrics.
   *Exit: full buyer flow in the browser; one trace spans all services.*
-- [ ] **Week 5**: k6 scenarios, chaos scenarios, tuning.
+- [x] **Week 5**: k6 scenarios, chaos scenarios, tuning.
   *Exit: 20 chaos runs, 0 invariant violations.*
 - [ ] **Week 6**: headline load test, results, demo video, deployment.
   *Exit: published numbers, graphs and ADRs.*

@@ -6,6 +6,8 @@ charts. Backends are small protocols so the logic is testable without Docker.
 """
 
 import asyncio
+import os
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
@@ -35,11 +37,16 @@ class PaymentFaults(Protocol):
     async def reset(self) -> None: ...
 
 
+class OrderControl(Protocol):
+    async def set_relay_paused(self, paused: bool) -> None: ...
+
+
 @dataclass
 class Backends:
     containers: Containers
     toxiproxy: Toxiproxy
     payment: PaymentFaults
+    order: OrderControl
 
 
 Step = Callable[[Backends], Awaitable[str | None]]
@@ -86,6 +93,37 @@ def _start(service: str) -> Step:
 def _payment(faults: dict[str, Any]) -> Step:
     async def run(b: Backends) -> str | None:
         await b.payment.set(faults)
+        return None
+
+    return run
+
+
+def seconds(iso: str) -> float:
+    """PT2M30S -> 150. The subset of ISO-8601 durations the stack uses."""
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?", iso.strip())
+    if not m or iso.strip() == "PT":
+        raise ValueError(f"not a PT duration: {iso!r}")
+    h, mi, se = m.groups()
+    return int(h or 0) * 3600 + int(mi or 0) * 60 + float(se or 0)
+
+
+def late_success_delay() -> float:
+    """A stalled charge must succeed after the order timed out (T), and after the
+    hold's grace, so the late success lands on a released seat."""
+    t = seconds(os.environ.get("PAYMENT_TIMEOUT", "PT2M"))
+    grace = seconds(os.environ.get("PIN_GRACE", "PT30S"))
+    return t + grace + 5
+
+
+async def _payment_timeouts(b: Backends) -> str | None:
+    delay = late_success_delay()
+    await b.payment.set({"timeout_rate": 0.5, "timeout_delay_s": delay})
+    return f"late successes after {delay:.0f} s"
+
+
+def _relay(paused: bool) -> Step:
+    async def run(b: Backends) -> str | None:
+        await b.order.set_relay_paused(paused)
         return None
 
     return run
@@ -177,7 +215,7 @@ CATALOGUE = [
         "Payment timeout storm",
         "Half the charges stall past the payment timeout, then succeed: late successes"
         " get refunded.",
-        _payment({"timeout_rate": 0.5}),
+        _payment_timeouts,
         _payment_reset,
         60,
     ),
@@ -204,6 +242,16 @@ CATALOGUE = [
         _latency("order_postgres", 300),
         _clear("order_postgres"),
         30,
+    ),
+    Action(
+        "pause-outbox-relay",
+        "Pause outbox relay",
+        "Order stops publishing its outbox. Confirmed sales reach Inventory only after"
+        " the holds' grace ran out: holds_expired_while_reserved moves, Postgres still"
+        " decides every seat.",
+        _relay(True),
+        _relay(False),
+        40,
     ),
     Action(
         "restart-redpanda",

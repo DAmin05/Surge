@@ -24,7 +24,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not project:
         yield  # unit tests: no Docker, no controller
         return
-    from .backends import DockerContainers, HttpPaymentFaults, HttpToxiproxy, redis_nodes
+    from .backends import (
+        DockerContainers,
+        HttpOrderControl,
+        HttpPaymentFaults,
+        HttpToxiproxy,
+        redis_nodes,
+    )
 
     async with httpx.AsyncClient(timeout=5) as http:
         app.state.controller = Controller(
@@ -36,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 payment=HttpPaymentFaults(
                     http, os.environ.get("PAYMENT_URL", "http://payment:8000")
                 ),
+                order=HttpOrderControl(http, os.environ.get("ORDER_URL", "http://order:8083")),
             )
         )
         yield
