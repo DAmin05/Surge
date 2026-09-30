@@ -9,7 +9,7 @@ help: ## Show targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}'
 
 ## ---------------------------------------------------------------- stack
-.PHONY: keys rotate-keys up check down nuke ps logs seed smoke saga-storm audit faults
+.PHONY: keys rotate-keys up check down nuke ps logs seed smoke saga-storm ws-bench audit faults
 # Keys are generated inside the keygen container so they end up owned by the uid the
 # services run as (10001), on Linux as well as on Docker Desktop.
 keys: ## Generate token signing keys into secrets/ (only if absent)
@@ -48,6 +48,9 @@ smoke: ## End-to-end check against the running stack: hold, race, checkout, saga
 saga-storm: ## Buyers vs. a faulty Payment; all orders must end terminal, 0 violations
 	@echo "Use a short payment timeout: PAYMENT_TIMEOUT=PT10S PIN_GRACE=PT10S make up"
 	PAYMENT_TIMEOUT=$${PAYMENT_TIMEOUT:-PT10S} scripts/saga-storm.sh
+
+ws-bench: ## 10k WebSocket clients vs. seat updates, p99 < 200 ms (start with WS_CONNECT_PER_IP_PER_SEC=100000)
+	scripts/ws-bench.sh
 
 audit: ## Run every invariant now and print the report
 	@docker compose exec -T inventory curl -s -X POST http://reconciler:8001/audit | python3 -m json.tool

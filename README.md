@@ -73,7 +73,7 @@ Each phase ships as one PR whose exit criterion is a required CI check.
   *Exit: `docker compose up` brings everything healthy.*
 - [x] **Week 1**: Inventory (Lua holds, sweeper) + Order happy path + seat claim.
   *Exit: 1,000 virtual threads race for 1 seat → exactly 1 winner.*
-- [ ] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
+- [x] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
   *Exit: same checkout retried 100× → 1 order; injected failures all end terminal.*
 - [ ] **Week 3**: Admission, Rust gateway (tokens, rate limit, WS fan-out).
   *Exit: 10k WebSocket clients get seat updates < 200 ms p99 locally.*

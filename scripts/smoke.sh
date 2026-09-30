@@ -8,6 +8,8 @@
 #   4. checkout -> 201, and a retry with the same Idempotency-Key replays it
 #   5. the saga completes: relay -> Payment -> signed webhook -> CONFIRMED, tickets issued
 #   6. seat events (held, extended, sold) are on the seat-events topic, in seq order
+#   7. the buyer path through the gateway: session, waiting room, admission token,
+#      hold and checkout, with tokens bound to the event and identity from the token
 set -euo pipefail
 
 compose=(docker compose)
@@ -97,5 +99,49 @@ seqs=$(grep -o '"seq":[0-9]*' <<<"$events" | cut -d: -f2 | sort -n | tr '\n' ' '
   || fail "seat events for section A: '$types'"
 [[ "$seqs" == 1\ 2\ 3\ 4\ * ]] || fail "section A seqs: '$seqs'"
 pass "seat-events has section A's changes in seq order ($types)"
+
+# --- 7. the buyer path through the gateway ------------------------------------
+gw="http://localhost:${GATEWAY_PORT:-8080}"
+jar=$(mktemp)
+code=$(curl -s -o /dev/null -w '%{http_code}' -c "$jar" -X POST "$gw/api/session")
+[[ "$code" == 201 ]] || fail "session: $code"
+grep -q surge_session "$jar" || fail "no session cookie"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$gw/api/queue/$event/join")
+[[ "$code" == 401 ]] || fail "queue without a session: $code"
+curl -sf -b "$jar" -X POST "$gw/api/queue/$event/join" > /dev/null || fail "join queue"
+token=""
+for _ in $(seq 50); do
+  pos=$(curl -sf -b "$jar" "$gw/api/queue/$event/position" || true)
+  if [[ "$pos" == *ADMITTED* ]]; then token=$(sed -E 's/.*"token":"([^"]+)".*/\1/' <<<"$pos"); break; fi
+  sleep 0.1
+done
+[[ -n "$token" ]] || fail "not admitted: $pos"
+pass "session cookie, waiting room, admitted with a token for event $event"
+
+hold_body="{\"eventId\":$event,\"section\":\"A\",\"seatIds\":[${A[4]}]}"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$gw/api/holds" -H 'Content-Type: application/json' -d "$hold_body")
+[[ "$code" == 401 ]] || fail "hold without a token: $code"
+other="{\"eventId\":$((event + 1000000)),\"section\":\"A\",\"seatIds\":[${A[4]}]}"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$gw/api/holds" -H "Authorization: Bearer $token" \
+  -H 'Content-Type: application/json' -d "$other")
+[[ "$code" == 403 ]] || fail "hold for another event: $code"
+res=$(curl -s -w '\n%{http_code}' -X POST "$gw/api/holds" -H "Authorization: Bearer $token" \
+  -H 'X-User-Id: mallory' -H 'Content-Type: application/json' -d "$hold_body")
+[[ "$(tail -1 <<<"$res")" == 201 ]] || fail "hold via gateway: $res"
+ghold=$(head -1 <<<"$res" | sed -E 's/.*"holdId":"([^"]+)".*/\1/')
+res=$(curl -s -w '\n%{http_code}' -X POST "$gw/api/checkout" -H "Authorization: Bearer $token" \
+  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -d "{\"holdId\":\"$ghold\"}")
+[[ "$(tail -1 <<<"$res")" == 201 ]] || fail "checkout via gateway: $res"
+gorder=$(head -1 <<<"$res" | sed -E 's/.*"orderId":([0-9]+).*/\1/')
+owner=$(sql "SELECT user_id FROM orders.orders WHERE id = $gorder")
+[[ "$owner" != mallory && -n "$owner" ]] || fail "order $gorder belongs to '$owner'"
+for _ in $(seq 60); do
+  [[ $(sql "SELECT state FROM orders.orders WHERE id = $gorder") == CONFIRMED ]] && break
+  sleep 0.5
+done
+[[ $(sql "SELECT state FROM orders.orders WHERE id = $gorder") == CONFIRMED ]] || fail "order $gorder not confirmed"
+rm -f "$jar"
+pass "hold + checkout through the gateway: order $gorder CONFIRMED for the token's user, spoofed X-User-Id ignored"
 
 echo "SMOKE OK"

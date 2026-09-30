@@ -43,6 +43,15 @@ services:
       ADMISSION_URL: http://admission:8081
       INVENTORY_URL: http://inventory:8082
       ORDER_URL: http://order:8083
+      RATE_LIMIT_IP_PER_SEC: ${RATE_LIMIT_IP_PER_SEC:-50}
+      RATE_LIMIT_USER_PER_SEC: ${RATE_LIMIT_USER_PER_SEC:-10}
+      WS_CONNECT_PER_IP_PER_SEC: ${WS_CONNECT_PER_IP_PER_SEC:-20}
+    # 10k WebSocket clients need 10k sockets. NOFILE lowers it where the Docker
+    # daemon's own limit is smaller.
+    ulimits: &many-sockets
+      nofile:
+        soft: ${NOFILE:-65536}
+        hard: ${NOFILE:-65536}
     ports: ["8080:8080"]
     volumes: ["../secrets/jwt:/secrets/jwt:ro"]
     depends_on: *ready-infra
@@ -127,3 +136,20 @@ services:
     ports: ["8002:8002"]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
     depends_on: *ready-infra
+
+  # WebSocket fan-out benchmark (`make ws-bench`): not part of the normal stack.
+  wsbench:
+    image: ${REGISTRY:-surge}/gateway:${TAG:-dev}
+    profiles: ["bench"]
+    entrypoint: ["wsbench"]
+    environment:
+      GATEWAY: gateway:8080
+      INVENTORY: http://inventory:8082
+      EVENT_ID: ${BENCH_EVENT_ID:-1}
+      CLIENTS: ${BENCH_CLIENTS:-10000}
+      HOLDS: ${BENCH_HOLDS:-100}
+      HOLD_RATE: ${BENCH_HOLD_RATE:-20}
+      P99_BUDGET_MS: ${BENCH_P99_BUDGET_MS:-200}
+    ulimits: *many-sockets
+    depends_on:
+      gateway: { condition: service_healthy }

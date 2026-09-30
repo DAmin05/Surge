@@ -32,11 +32,16 @@ module: each service owns its outbox and idempotency code.
 
 ## Identity and tokens
 
-- **Anonymous identity is server-issued.** On first visit Admission creates `userId`
-  and returns it in a signed, HttpOnly session cookie (Ed25519 JWT, `typ=session`).
-  Clients never pick their own id. k6 obtains identities through the same endpoint.
-- **Admission token:** Ed25519 JWT, `typ=admission`, claims `sub`, `eventId`, `exp`
-  (10 min), `jti`. Header carries `kid`.
+- **Anonymous identity is server-issued.** On first visit (`POST /api/session`)
+  Admission creates `userId` and returns it in a signed, HttpOnly, SameSite=Lax session
+  cookie `surge_session` (Ed25519 JWT, 24 h). A valid existing cookie is kept. Clients
+  never pick their own id. k6 obtains identities through the same endpoint.
+- **Admission token:** Ed25519 JWT with claims `sub`, `eventId`, `exp`, `jti`; header
+  `kid`. `exp` is 10 minutes after *admission* (not after issue), so polling again
+  yields an equivalent token.
+- **Token type lives in the JWT header** (`typ: surge-session+jwt` /
+  `surge-admission+jwt`, RFC 8725 explicit typing); `alg` must be `EdDSA`. Signed with
+  the JDK's Ed25519; verified in the gateway with `ed25519-dalek` (`verify_strict`).
 - Session and admission tokens use **separate key pairs / `kid`s**. The gateway
   rejects any token whose `typ` does not match the route (no replaying a session token
   as an admission token).
@@ -50,11 +55,48 @@ module: each service owns its outbox and idempotency code.
 
 ## Admission (waiting room)
 
-- Redis sorted set per event, scored by arrival time. `ZADD NX` → one queue position
-  per user per event.
-- Scheduled admitter pops N users/sec (sized to downstream capacity) and issues
-  admission tokens.
-- `GET /queue/{eventId}/position`, polled or pushed over WebSocket.
+- Keys share the hash tag `{adm:evt:<id>}`: `queue` (zset, arrival time), `admitted`
+  (zset, admission time), `bucket` (rate limiter state).
+- `POST /api/queue/{e}/join`: `ZADD NX` → one queue position per user per event;
+  already admitted → the token.
+- `GET /api/queue/{e}/position`: `WAITING` with position, `ahead` and an estimated wait,
+  or `ADMITTED` with the token, or `404 NOT_IN_QUEUE`.
+- **Admitter:** every 100 ms, a Lua script pops users into `admitted` through a **token
+  bucket stored in Redis** (`ADMIT_RATE_PER_SEC`, burst = 1 s). The rate is global
+  however many Admission instances run, and moving a user from queued to admitted is
+  one atomic step, so a crash can't lose anyone. Tokens are minted on read from the
+  admitted set: no "admitted but no token" state exists. Admissions older than the
+  token lifetime are pruned; that user may queue again.
+- Metrics: `queue_depth{event}`, `queue_joins_total`, `queue_admitted_total`.
+
+## Gateway
+
+Every request passes a per-IP token bucket (`RATE_LIMIT_IP_PER_SEC`, burst 2x);
+authenticated routes also a per-user one. The gateway strips any client-sent
+`X-User-Id` and sets it from the verified token.
+
+| Route | Token | Upstream |
+|---|---|---|
+| `POST /api/session` | none | Admission `/session` (cookies pass both ways) |
+| `POST /api/queue/{e}/join`, `GET /api/queue/{e}/position` | session cookie | Admission |
+| `GET /api/events/{e}` | none | Order catalog (sections, prices, seats), cached 30 s |
+| `POST /api/holds` | admission, `eventId` in body must match | Inventory |
+| `DELETE /api/holds/{id}`, `POST /api/checkout` | admission, hold id's event must match | Inventory / Order |
+| `GET /ws/events/{e}` | none (per-IP connect limit) | live seat map |
+
+**Seat map protocol (`/ws/events/{e}`):** the gateway subscribes the socket to the
+event's broadcast channel *before* taking the snapshot, then sends
+`{"type":"snapshot","eventId":e,"sections":[{section,epoch,seq,sold,held}]}` followed by
+`{"type":"seat","event":<SeatEvent>}` frames. The client sends
+`{"type":"resnapshot","section":"A"}` (or no section) on a seq gap or epoch change. A
+client too slow for the channel's buffer gets a fresh full snapshot. Snapshots are
+cached 250 ms with request coalescing, so a reconnect storm isn't a request storm; a
+slightly stale snapshot only costs the client one re-snapshot. Kafka consumption:
+[ADR 0006](adr/0006-gateway-consumes-every-partition.md).
+
+Metrics: `gateway_ws_connections`, `gateway_seat_event_age_at_fanout_seconds`,
+`gateway_upstream_seconds{route}`, `gateway_rate_limited_total{by}`,
+`gateway_ws_lagged_total`, `gateway_ws_resnapshots_total`.
 
 ## Inventory (holds)
 
@@ -256,6 +298,9 @@ orders open past T + one timeout-sweeper pass + 15 s slack.
 - Seed (`make seed`, [`infra/postgres/seed.sql`](../infra/postgres/seed.sql)): 1 event ×
   10 sections × 1,000 seats, configurable; a **skewed-demand** mode
   sends ~50% of traffic to one section (contention is per shard).
+- WebSocket fan-out (`make ws-bench`, CI): 10,000 clients on one event, 100 seat
+  changes at 20/s; every client must receive every change, p99 < 200 ms from
+  Inventory's change to the client's read.
 - Saga storm (`make saga-storm`, CI): buyers vs. a faulty Payment (30 % declines,
   15 % stalls past T, 30 % duplicate and 25 % out-of-order callbacks), same-key
   checkout retries; every order must end terminal with 0 violations.
