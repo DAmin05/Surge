@@ -79,7 +79,15 @@ module: each service owns its outbox and idempotency code.
   from the section, so not atomic with the hold — fine for a pre-check.
 - Producer: `acks=all`, `enable.idempotence=true`. Seat events may still be lost
   (no outbox — Inventory has no database); the map self-heals (below).
-- gRPC `ValidateAndPinHold(holdId, userId)` — see checkout ordering.
+- gRPC `ValidateAndPinHold(holdId, userId)` and `ReleaseHold` — see checkout ordering.
+- Hold ids name their section (`<eventId>:<section>:<uuid>`), so any instance finds a
+  hold's shard from the id alone. Section names match `[A-Za-z0-9_-]{1,32}`.
+- Inventory doesn't validate that seat ids exist (it has no database). An unknown
+  seat can be held but never claimed: the Postgres claim rejects it (`INVALID_SEATS`),
+  and the per-user limit caps how much of that anyone can do.
+- Key layout and script contracts: [`services/inventory/src/main/resources/lua`](../services/inventory/src/main/resources/lua/README.md).
+- Internal REST (the gateway sets `X-User-Id`): `POST /holds`, `DELETE /holds/{id}`,
+  `GET /sections/{eventId}/{section}/snapshot`.
 
 ## Checkout, claim, and saga (Order)
 
@@ -115,8 +123,15 @@ Crash after claim → already pinned. No outbox needed for the pin.
 6. Outbox `PaymentRequested`, same transaction.
 
 **Saga states:** `CREATED → SEAT_RESERVED → PAYMENT_PENDING → CONFIRMED`;
-compensation `PAYMENT_FAILED → SEAT_RELEASED → CANCELLED`; `FAILED` when the claim is
-lost. Transitions only move forward.
+compensation `PAYMENT_FAILED → SEAT_RELEASED → CANCELLED`. Transitions only move
+forward. The claim transaction writes the order directly as `SEAT_RESERVED`; a lost
+claim rolls back completely and leaves no order row (the checkout answers `409
+SEAT_TAKEN`, and idempotency records that response). `CREATED` and `FAILED` remain in
+the state set for orders recorded before or without a claim.
+
+**Checkout responses:** `201` order created · `409 SEAT_TAKEN | USER_LIMIT` ·
+`422 INVALID_SEATS | UNKNOWN_SECTION` · `410 HOLD_EXPIRED` · `403 NOT_YOUR_HOLD` ·
+`503 RETRY_LATER` (Inventory unreachable or section rebuilding; `Retry-After: 1`).
 
 **Payment request/response:**
 
@@ -200,7 +215,8 @@ Schema: [`services/order/db/migration`](../services/order/db/migration),
 
 ## Load and chaos
 
-- Seed: 1 event × 10 sections × 1,000 seats, configurable; a **skewed-demand** mode
+- Seed (`make seed`, [`infra/postgres/seed.sql`](../infra/postgres/seed.sql)): 1 event ×
+  10 sections × 1,000 seats, configurable; a **skewed-demand** mode
   sends ~50% of traffic to one section (contention is per shard).
 - Chaos scenarios: kill a Redis primary mid-sale (lost holds + sold-set rebuild), kill
   an inventory instance, payment timeout storm, duplicate/out-of-order webhooks,

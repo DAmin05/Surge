@@ -24,6 +24,22 @@ jobs:
       # Unit + Testcontainers integration tests (Docker is available on the runner).
       - run: ./gradlew build --console=plain
 
+  # Week-1 exit criterion: 1,000 virtual threads race for one seat -> exactly one
+  # winner, at both layers (Redis hold, Postgres claim). Also run by the Java job;
+  # kept separate so it can be a required check by name.
+  race:
+    name: "Exit: one seat, one winner"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - uses: gradle/actions/setup-gradle@v4
+      - run: >-
+          ./gradlew --console=plain
+          :services:order:test --tests 'dev.surge.order.claim.ClaimRaceTest'
+          :services:inventory:test --tests 'dev.surge.inventory.hold.HoldServiceTest'
+
   rust:
     name: Rust (gateway)
     runs-on: ubuntu-latest
@@ -55,7 +71,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest -q
 
-  # Week-0 exit criterion: `docker compose up` brings everything healthy.
+  # `docker compose up` brings everything healthy, and the services work together.
   stack:
     name: "Exit: stack healthy"
     runs-on: ubuntu-latest
@@ -73,6 +89,9 @@ jobs:
         run: docker compose up -d
       - name: Wait until every service is healthy
         run: TIMEOUT=300 scripts/check-stack.sh
+      # Hold race on the real Redis Cluster, checkout over gRPC + Postgres, seat events.
+      - name: End-to-end smoke test
+        run: scripts/smoke.sh
       - name: Dump state on failure
         if: failure()
         run: |

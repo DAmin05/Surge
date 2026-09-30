@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/seat-event.schema.json",
+  "title": "SeatEvent",
+  "description": "One change to one seat on the seat-events topic, keyed by \"eventId:section\". A consumer that sees a seq gap or a different epoch for a section must re-snapshot.",
+  "type": "object",
+  "required": ["type", "eventId", "section", "seatId", "epoch", "seq", "occurredAtMs"],
+  "properties": {
+    "type": { "enum": ["SEAT_HELD", "SEAT_RELEASED", "SEAT_HOLD_EXTENDED", "SEAT_SOLD"] },
+    "eventId": { "type": "integer" },
+    "section": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+    "seatId": { "type": "integer" },
+    "epoch": { "type": "string", "description": "Random id; compare for equality only." },
+    "seq": { "type": "integer", "minimum": 1, "description": "Per-section, per-epoch sequence." },
+    "holdId": { "type": ["string", "null"] },
+    "userId": { "type": ["string", "null"] },
+    "leaseExpiresAtMs": { "type": ["integer", "null"] },
+    "occurredAtMs": { "type": "integer" }
+  },
+  "additionalProperties": false
+}
