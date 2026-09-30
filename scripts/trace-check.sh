@@ -4,6 +4,8 @@
 # `x-trace-id` response header, waits for the order to confirm, then asks Jaeger which
 # services that single trace contains.
 set -euo pipefail
+# A fresh UUID: uuidgen on macOS (which has no /proc), the kernel's elsewhere.
+uuid() { if command -v uuidgen >/dev/null; then uuidgen | tr 'A-Z' 'a-z'; else cat /proc/sys/kernel/random/uuid; fi; }
 
 compose=(docker compose)
 gw="http://localhost:${GATEWAY_PORT:-8080}"
@@ -30,7 +32,7 @@ hold=$(curl -sf -X POST "$gw/api/holds" -H "Authorization: Bearer $token" -H 'Co
   -d "{\"eventId\":$event,\"section\":\"A\",\"seatIds\":[$seat]}" | sed -E 's/.*"holdId":"([^"]+)".*/\1/')
 headers=$(mktemp)
 order=$(curl -sf -D "$headers" -X POST "$gw/api/checkout" -H "Authorization: Bearer $token" \
-  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -H 'Content-Type: application/json' \
   -d "{\"holdId\":\"$hold\"}" | sed -E 's/.*"orderId":([0-9]+).*/\1/')
 trace=$(grep -i '^x-trace-id:' "$headers" | tr -d '\r' | awk '{print $2}'); rm -f "$headers"
 [[ -n "$trace" ]] || fail "gateway returned no x-trace-id"

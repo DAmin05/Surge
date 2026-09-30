@@ -19,6 +19,8 @@ sql() { "${compose[@]}" exec -T postgres psql -qtA -U orders_owner -d "${POSTGRE
 # Internal services aren't published; call them from inside the network.
 call() { "${compose[@]}" exec -T inventory curl -s -o /dev/stderr -w '%{http_code}' "$@" 2>/tmp/smoke-body || true; }
 body() { cat /tmp/smoke-body; }
+# A fresh UUID: uuidgen on macOS (which has no /proc), the kernel's elsewhere.
+uuid() { if command -v uuidgen >/dev/null; then uuidgen | tr 'A-Z' 'a-z'; else cat /proc/sys/kernel/random/uuid; fi; }
 
 event=$("${compose[@]}" exec -T postgres psql -qtA -U orders_owner -d "${POSTGRES_DB:-surge}" \
   -v sections=2 -v rows=1 -v seats_per_row=6 < infra/postgres/seed.sql)
@@ -50,11 +52,11 @@ pass "bob's overlapping hold rejected, all-or-nothing"
 
 # --- 4. checkout ----------------------------------------------------------------
 code=$(call -X POST http://order:8083/checkout -H 'X-User-Id: mallory' -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -d "{\"holdId\":\"$hold\"}")
+  -H "Idempotency-Key: $(uuid)" -d "{\"holdId\":\"$hold\"}")
 [[ "$code" == 403 ]] || fail "checkout of someone else's hold: $code $(body)"
 pass "checkout of someone else's hold rejected"
 
-key=$(cat /proc/sys/kernel/random/uuid)
+key=$(uuid)
 code=$(call -X POST http://order:8083/checkout -H 'X-User-Id: alice' -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $key" -d "{\"holdId\":\"$hold\"}")
 [[ "$code" == 201 ]] || fail "checkout: $code $(body)"
@@ -131,7 +133,7 @@ res=$(curl -s -w '\n%{http_code}' -X POST "$gw/api/holds" -H "Authorization: Bea
 [[ "$(tail -1 <<<"$res")" == 201 ]] || fail "hold via gateway: $res"
 ghold=$(head -1 <<<"$res" | sed -E 's/.*"holdId":"([^"]+)".*/\1/')
 res=$(curl -s -w '\n%{http_code}' -X POST "$gw/api/checkout" -H "Authorization: Bearer $token" \
-  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -H 'Content-Type: application/json' \
   -d "{\"holdId\":\"$ghold\"}")
 [[ "$(tail -1 <<<"$res")" == 201 ]] || fail "checkout via gateway: $res"
 gorder=$(head -1 <<<"$res" | sed -E 's/.*"orderId":([0-9]+).*/\1/')
