@@ -21,6 +21,13 @@ surge:
     max-seats-per-user: 4
     inventory-grpc: ${INVENTORY_GRPC:localhost:9091}
     inventory-deadline: PT2S
+    payment-url: ${PAYMENT_URL:http://localhost:8000}
+    payment-timeout: ${PAYMENT_TIMEOUT:PT2M}
+    timeout-sweep-interval: ${TIMEOUT_SWEEP_INTERVAL:PT5S}
+    webhook-secret: ${PAYMENT_WEBHOOK_SECRET:dev-webhook-secret}
+    kafka-bootstrap: ${KAFKA_BOOTSTRAP:localhost:19092}
+    outbox-poll-interval: ${OUTBOX_POLL_INTERVAL:PT0.2S}
+    idempotency-stale-after: PT60S
 
 management:
   endpoints:

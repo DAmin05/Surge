@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/order-event.schema.json",
+  "title": "OrderEvent",
+  "description": "order-events topic, keyed by orderId, published from Order's outbox. At-least-once; consumers must be idempotent.",
+  "type": "object",
+  "required": ["type", "orderId", "userId"],
+  "properties": {
+    "type": { "enum": ["PAYMENT_REQUESTED", "ORDER_CONFIRMED", "ORDER_CANCELLED", "REFUND_REQUESTED"] },
+    "orderId": { "type": "integer" },
+    "userId": { "type": "string" },
+    "eventId": { "type": ["integer", "null"] },
+    "section": { "type": ["string", "null"] },
+    "seatIds": { "type": ["array", "null"], "items": { "type": "integer" } },
+    "holdId": { "type": ["string", "null"] },
+    "paymentKey": { "type": ["string", "null"], "format": "uuid" },
+    "amountCents": { "type": ["integer", "null"] },
+    "reason": { "type": ["string", "null"] }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "enum": ["PAYMENT_REQUESTED", "REFUND_REQUESTED"] } } },
+      "then": { "required": ["paymentKey", "amountCents"] } },
+    { "if": { "properties": { "type": { "enum": ["ORDER_CONFIRMED", "ORDER_CANCELLED"] } } },
+      "then": { "required": ["eventId", "section", "seatIds", "holdId"] } }
+  ]
+}

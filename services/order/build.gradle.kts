@@ -11,6 +11,7 @@ dependencies {
     implementation(libs.spring.boot.starter.jdbc)
     implementation(libs.jackson.databind)
     implementation(libs.grpc.netty.shaded)
+    implementation(libs.kafka.clients)
     runtimeOnly(libs.postgresql)
     runtimeOnly(libs.micrometer.prometheus)
 
@@ -19,6 +20,8 @@ dependencies {
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.flyway.core)
     testImplementation(libs.flyway.postgresql)
+    testImplementation(libs.testcontainers)
+    testImplementation(libs.testcontainers.redpanda)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

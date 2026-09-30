@@ -15,6 +15,8 @@ import java.util.concurrent.Executors;
 
 import dev.surge.order.PostgresTestSupport;
 import dev.surge.order.config.OrderProperties;
+import dev.surge.order.outbox.Outbox;
+import dev.surge.order.saga.OrderStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -33,8 +35,9 @@ class ClaimRaceTest {
     private final ClaimService claims = new ClaimService(
             jdbc,
             new TransactionTemplate(new DataSourceTransactionManager(PostgresTestSupport.APP)),
+            new OrderStore(jdbc),
+            new Outbox(jdbc, JsonMapper.builder().build()),
             new OrderProperties(4, "unused:0", Duration.ofSeconds(1)),
-            JsonMapper.builder().build(),
             new SimpleMeterRegistry());
 
     /** Runs every task at once on virtual threads, released by a single latch. */

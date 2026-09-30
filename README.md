@@ -26,7 +26,8 @@ Requires Docker (Docker Desktop: give it at least 8 GB of RAM).
 ```bash
 make up        # build images, start ~25 containers, wait until all are healthy
 make seed      # create an event: 10 sections x 1,000 seats (prints the event id)
-make smoke     # end-to-end check: hold race on the cluster, checkout, seat events
+make smoke     # end-to-end: hold race on the cluster, checkout, saga to CONFIRMED, events
+make audit     # run the invariants now
 make help      # everything else
 ```
 
@@ -70,7 +71,7 @@ Each phase ships as one PR whose exit criterion is a required CI check.
 
 - [x] **Week 0**: monorepo, Compose stack, Flyway migrations, CI skeleton.
   *Exit: `docker compose up` brings everything healthy.*
-- [ ] **Week 1**: Inventory (Lua holds, sweeper) + Order happy path + seat claim.
+- [x] **Week 1**: Inventory (Lua holds, sweeper) + Order happy path + seat claim.
   *Exit: 1,000 virtual threads race for 1 seat → exactly 1 winner.*
 - [ ] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
   *Exit: same checkout retried 100× → 1 order; injected failures all end terminal.*

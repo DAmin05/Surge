@@ -21,4 +21,7 @@ KEYS: 1 epoch, 2 seq, 3 expiry, 4 sold, 5 held, 6 hold, 7.. seat keys
 ARGV: 1 holdId, 2 userId, 3 script-specific, 4.. seat ids (same order as seat keys)
 ```
 
+Scripts: `hold`, `pin`, `release` (owner or system; `expired` mode for the sweeper),
+`sold` (order confirmed), `expired` (sweeper listing), `snapshot`.
+
 Time always comes from the shard's own clock (`TIME`), never from the caller.

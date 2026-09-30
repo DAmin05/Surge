@@ -20,5 +20,6 @@ def test_starts_with_otel_export_configured(monkeypatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
     monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
     monkeypatch.setenv("OTEL_LOGS_EXPORTER", "none")
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "none")
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200

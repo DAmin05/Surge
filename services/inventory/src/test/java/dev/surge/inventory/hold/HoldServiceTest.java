@@ -13,9 +13,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import dev.surge.contracts.events.SeatEvent;
 import dev.surge.contracts.events.SeatEvent.Type;
+import dev.surge.contracts.events.SeatStatus;
 import dev.surge.inventory.RedisTestSupport;
 import dev.surge.inventory.RedisTestSupport.RecordingPublisher;
 import dev.surge.inventory.config.InventoryProperties;
+import dev.surge.inventory.events.SoldLedger;
 import dev.surge.inventory.redis.LuaScripts;
 import dev.surge.inventory.redis.SectionKeys;
 import io.lettuce.core.cluster.api.sync.RedisClusterCommands;
@@ -36,9 +38,28 @@ class HoldServiceTest {
         eventId = EVENT_IDS.incrementAndGet();
     }
 
+    private final MemoryLedger ledger = new MemoryLedger();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
     private HoldService service(InventoryProperties props) {
-        return new HoldService(redis, new LuaScripts(redis), new EpochRebuilder(redis), published, props,
-                new SimpleMeterRegistry());
+        return new HoldService(redis, new LuaScripts(redis), new EpochRebuilder(redis, ledger, meters), published,
+                ledger, props, meters);
+    }
+
+    /** The seat-status topic, in memory. */
+    static final class MemoryLedger implements SoldLedger {
+        final List<SeatStatus> records = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void record(List<SeatStatus> sold) {
+            records.addAll(sold);
+        }
+
+        @Override
+        public void replay(long eventId, String section, java.util.function.Consumer<Long> sold) {
+            records.stream().filter(r -> r.eventId() == eventId && r.section().equals(section))
+                    .forEach(r -> sold.accept(r.seatId()));
+        }
     }
 
     private HoldService service() {
@@ -191,6 +212,65 @@ class HoldServiceTest {
         assertThat(holds.release(held.holdId().value(), "bob")).isFalse();
         assertThat(holds.release(held.holdId().value(), "alice")).isTrue();
         assertThat(holds.hold("alice", eventId, "H", List.of(1L, 2L, 3L, 4L))).isInstanceOf(HoldResult.Held.class);
+    }
+
+    @Test
+    void confirmedSeatsBecomeSoldForGoodAndRedeliveryChangesNothing() {
+        HoldService holds = service();
+        var held = (HoldResult.Held) holds.hold("alice", eventId, "S", List.of(1L, 2L));
+        holds.validateAndPin(held.holdId().value(), "alice");
+
+        holds.markSold(77, eventId, "S", List.of(2L, 1L), held.holdId().value());
+        int eventsAfterFirst = published.events.size();
+        holds.markSold(77, eventId, "S", List.of(1L, 2L), held.holdId().value());
+
+        assertThat(published.events.subList(4, eventsAfterFirst)).extracting(SeatEvent::type)
+                .containsOnly(Type.SEAT_SOLD).hasSize(2);
+        assertThat(published.events).hasSize(eventsAfterFirst);
+        var snap = holds.snapshot(eventId, "S");
+        assertThat(snap.sold()).containsExactly(1L, 2L);
+        assertThat(snap.held()).isEmpty();
+        assertThat(holds.hold("bob", eventId, "S", List.of(1L)))
+                .isEqualTo(new HoldResult.Rejected(HoldResult.Reason.SEAT_SOLD, 1L));
+        assertThat(ledger.records).extracting(SeatStatus::seatId).contains(1L, 2L);
+        assertThat(meters.counter("holds_expired_while_reserved").count()).isZero();
+    }
+
+    @Test
+    void aSaleThatOutlivedItsLeaseIsCounted() throws Exception {
+        HoldService holds = service(RedisTestSupport.props(Duration.ofMillis(200), Duration.ofMillis(100),
+                Duration.ofMillis(100)));
+        var held = (HoldResult.Held) holds.hold("alice", eventId, "T", List.of(5L));
+        Thread.sleep(400);
+        holds.sweepExpired();
+
+        holds.markSold(78, eventId, "T", List.of(5L), held.holdId().value());
+
+        assertThat(meters.counter("holds_expired_while_reserved").count()).isEqualTo(1);
+        assertThat(holds.snapshot(eventId, "T").sold()).containsExactly(5L);
+    }
+
+    @Test
+    void cancelledOrdersReleaseTheirHoldsAsTheSystem() {
+        HoldService holds = service();
+        var held = (HoldResult.Held) holds.hold("alice", eventId, "U", List.of(9L));
+        assertThat(holds.release(held.holdId().value(), null)).isTrue();
+        assertThat(holds.hold("bob", eventId, "U", List.of(9L))).isInstanceOf(HoldResult.Held.class);
+    }
+
+    @Test
+    void aRebuildRestoresSoldSeatsFromTheLedgerBeforeAcceptingHolds() {
+        HoldService holds = service();
+        var held = (HoldResult.Held) holds.hold("alice", eventId, "V", List.of(3L));
+        holds.markSold(79, eventId, "V", List.of(3L), held.holdId().value());
+        var keys = new SectionKeys(eventId, "V");
+        redis.del(redis.keys(keys.tag() + "*").toArray(String[]::new));
+
+        // The section lost its sold markers; the ledger still has them.
+        assertThat(holds.hold("bob", eventId, "V", List.of(3L)))
+                .isEqualTo(new HoldResult.Rejected(HoldResult.Reason.SEAT_SOLD, 3L));
+        assertThat(meters.counter("section_rebuilds_total").count()).isGreaterThanOrEqualTo(1);
+        assertThat(holds.hold("bob", eventId, "V", List.of(4L))).isInstanceOf(HoldResult.Held.class);
     }
 
     @Test

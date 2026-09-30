@@ -17,6 +17,7 @@ dependencies {
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.testcontainers)
     testImplementation(libs.testcontainers.junit)
+    testImplementation(libs.testcontainers.redpanda)
     testImplementation(libs.grpc.inprocess)
     testRuntimeOnly(libs.junit.platform.launcher)
 }

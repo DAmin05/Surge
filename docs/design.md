@@ -94,8 +94,18 @@ module: each service owns its outbox and idempotency code.
 `POST /checkout` requires `Idempotency-Key`.
 
 **Idempotency:** primary key `(user_id, key)`. Row with null `response_code` =
-in progress → `409`. Same key with a different `request_hash` → `422`. Nightly job
-deletes rows older than 24 h.
+in progress → `409 REQUEST_IN_PROGRESS`. Same key with a different `request_hash` →
+`422 IDEMPOTENCY_KEY_REUSED`. Completed → the stored response is replayed
+(`Idempotent-Replayed: true`; bodies come back from `jsonb`, so formatting is
+normalized). Nightly job deletes rows older than 24 h.
+
+- A `201` is stored **inside the claim transaction**, so "order exists" and "response
+  stored" can't disagree. Rejections (`409`/`410`/`403`/`422`) are stored too; `503`s are
+  not (the key is freed so a retry can proceed).
+- A request that dies mid-flight would leave its key in progress forever, so a retry may
+  **take over** a key that's been in progress for 60 s. Every attempt holds a
+  `lease_token`; only the current holder can complete the key. If the stuck request
+  wakes up, its completion matches no row and its whole claim rolls back.
 
 **Checkout ordering:**
 
@@ -124,10 +134,16 @@ Crash after claim → already pinned. No outbox needed for the pin.
 
 **Saga states:** `CREATED → SEAT_RESERVED → PAYMENT_PENDING → CONFIRMED`;
 compensation `PAYMENT_FAILED → SEAT_RELEASED → CANCELLED`. Transitions only move
-forward. The claim transaction writes the order directly as `SEAT_RESERVED`; a lost
-claim rolls back completely and leaves no order row (the checkout answers `409
-SEAT_TAKEN`, and idempotency records that response). `CREATED` and `FAILED` remain in
-the state set for orders recorded before or without a claim.
+forward (`OrderState` refuses anything else) and every one is recorded in
+`order_transitions` with a reason. The claim transaction walks
+`CREATED → SEAT_RESERVED → PAYMENT_PENDING` and writes `PaymentRequested` to the outbox,
+so an order becomes pending exactly when its payment request is committed. A lost claim
+rolls back completely and leaves no order row. `FAILED` is reserved; nothing writes it
+today. Orchestration, not choreography: [ADR 0005](adr/0005-orchestrated-saga.md).
+
+**Lock order (every code path):** per-(event, user) advisory lock → order row
+(`FOR UPDATE`) → seat rows in ascending id (`FOR UPDATE`). The claim takes the advisory
+lock and seats; confirmation and compensation take the order row and seats.
 
 **Checkout responses:** `201` order created · `409 SEAT_TAKEN | USER_LIMIT` ·
 `422 INVALID_SEATS | UNKNOWN_SECTION` · `410 HOLD_EXPIRED` · `403 NOT_YOUR_HOLD` ·
@@ -137,7 +153,15 @@ the state set for orders recorded before or without a claim.
 
 - Request: outbox `PaymentRequested` → Payment consumes it,
   `INSERT … ON CONFLICT (payment_key) DO NOTHING`, charges only if it inserted. The
-  mock charge is itself idempotent by `payment_key` (Kafka is at-least-once).
+  mock charge is itself idempotent by `payment_key` (Kafka is at-least-once): settling
+  is `UPDATE … WHERE status = 'PENDING'`. On restart Payment resumes `PENDING` charges.
+- Webhook: `POST /payments/webhook`, body per `schemas/payment-webhook.schema.json`,
+  signed `Surge-Signature: sha256=<hex HMAC-SHA256(secret, raw body)>` (a forged
+  success would issue free tickets). Retried with backoff until Order answers 2xx or
+  404, for up to 60 s; after that the timeout sweeper's `GET` covers it.
+- Faults (runtime, `PUT /faults`): `failure_rate`, latency range, `timeout_rate` (the
+  charge stalls `timeout_delay_s`, then succeeds: a late success), `duplicate_rate`
+  (2-3 concurrent deliveries), `out_of_order_rate` (a stale `FAILED` after a success).
 - Response: **the webhook to Order is authoritative** (Stripe-style). Kafka
   `Payment*` events are for observers only (Reconciler, dashboard).
 - Late `failed` after `succeeded` → ignored. Late `succeeded` after a timeout
@@ -158,15 +182,22 @@ Both configurable. Metric `holds_expired_while_reserved` should be 0; a chaos sc
 pauses the relay past the grace to show it moving.
 
 **After confirmation:** Order publishes `OrderConfirmed` via the outbox. Inventory
-consumes it, deletes the holds and their expiry-set entries, writes sold markers
-(no TTL), and publishes `SeatSold` to the compacted `seat-status` topic keyed by
-`seat_id`.
+consumes it, first records the seats on the compacted `seat-status` topic (keyed by
+`seat_id`, waits for the ack), then in one script writes sold markers (no TTL), deletes
+the hold and its expiry entry, and emits `SEAT_SOLD`. A redelivery skips seats already
+sold. If the hold was already gone or re-held when the sale landed,
+`holds_expired_while_reserved` counts it. `OrderCancelled` releases the hold.
+Inventory's consumer commits offsets only after a batch is applied.
 
 **No resale:** a seat that had a ticket issued never goes back on sale. Upgrade path:
 `tickets.status` + partial unique index on `seat_id WHERE status = 'ACTIVE'`. Seats of
 orders that never confirmed return to `AVAILABLE`.
 
-**Outbox relay:** `SELECT … FOR UPDATE SKIP LOCKED`, safe with multiple relays.
+**Outbox relay:** polls every 200 ms, claims batches with `SELECT … FOR UPDATE SKIP
+LOCKED` (safe with multiple relays), marks rows published only after the broker acks.
+At-least-once; with several relays, one order's events may be published out of order,
+so consumers are idempotent and decide by state, not arrival order. Lag:
+`outbox_oldest_unpublished_seconds`.
 
 ## Live seat map
 
@@ -194,6 +225,13 @@ Schema: [`services/order/db/migration`](../services/order/db/migration),
 
 ## Reconciler invariants (target: 0 violations every run)
 
+Runs every 5 s during a sale (`reconciler_invariant_violations{invariant}`,
+`GET /violations`) and on demand (`POST /audit`, `make audit`). Postgres checks run as
+`reconciler_ro`; invariant 5 reads the Redis expiry sets. Tolerances: invariant 3 allows
+a captured payment on a cancelled order `REFUND_GRACE` (60 s) to be refunded and
+ignores orders still `PAYMENT_PENDING` (that's invariant 4's job); invariant 4 flags
+orders open past T + one timeout-sweeper pass + 15 s slack.
+
 1. Sold seats ≤ capacity.
 2. No seat sold twice (unique constraint, verified anyway).
 3. Every captured payment has a ticket for **every** seat of its order, or a refund.
@@ -218,6 +256,9 @@ Schema: [`services/order/db/migration`](../services/order/db/migration),
 - Seed (`make seed`, [`infra/postgres/seed.sql`](../infra/postgres/seed.sql)): 1 event ×
   10 sections × 1,000 seats, configurable; a **skewed-demand** mode
   sends ~50% of traffic to one section (contention is per shard).
+- Saga storm (`make saga-storm`, CI): buyers vs. a faulty Payment (30 % declines,
+  15 % stalls past T, 30 % duplicate and 25 % out-of-order callbacks), same-key
+  checkout retries; every order must end terminal with 0 violations.
 - Chaos scenarios: kill a Redis primary mid-sale (lost holds + sold-set rebuild), kill
   an inventory instance, payment timeout storm, duplicate/out-of-order webhooks,
   Order↔Postgres partition, Redpanda restart during relay, late success after
