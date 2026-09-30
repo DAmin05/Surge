@@ -1,0 +1,128 @@
+# Surge application services. Included from ../compose.yaml.
+# Ports are internal only except the gateway (the single public entry point) and the
+# chaos controller (driven from the chaos panel during development).
+
+x-java-build: &java-build
+  context: ..
+  dockerfile: services/Dockerfile
+
+x-python-build: &python-build
+  dockerfile: ../infra/docker/python.Dockerfile
+
+x-common-env: &common-env
+  # Traces go to Jaeger over OTLP; metrics are scraped by Prometheus instead.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+  REDIS_NODES: redis-1:6379,redis-2:6379,redis-3:6379,redis-4:6379,redis-5:6379,redis-6:6379
+  KAFKA_BOOTSTRAP: redpanda:9092
+
+x-ready-infra: &ready-infra
+  keygen: { condition: service_completed_successfully }
+  redis-cluster-init: { condition: service_completed_successfully }
+  redpanda-topics: { condition: service_completed_successfully }
+  db-migrate-orders: { condition: service_completed_successfully }
+  db-migrate-payments: { condition: service_completed_successfully }
+  toxiproxy: { condition: service_healthy }
+  jaeger: { condition: service_healthy }
+
+services:
+  gateway:
+    image: ${REGISTRY:-surge}/gateway:${TAG:-dev}
+    build: { context: ../gateway }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: gateway
+      PORT: "8080"
+      JWT_KEYS_DIR: /secrets/jwt
+      ADMISSION_URL: http://admission:8081
+      INVENTORY_URL: http://inventory:8082
+      ORDER_URL: http://order:8083
+    ports: ["8080:8080"]
+    volumes: ["../secrets/jwt:/secrets/jwt:ro"]
+    depends_on: *ready-infra
+
+  admission:
+    image: ${REGISTRY:-surge}/admission:${TAG:-dev}
+    build: { <<: *java-build, args: { SERVICE: admission } }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: admission
+      PORT: "8081"
+      JWT_KEYS_DIR: /secrets/jwt
+      ADMIT_RATE_PER_SEC: ${ADMIT_RATE_PER_SEC:-200}
+    volumes: ["../secrets/jwt:/secrets/jwt:ro"]
+    depends_on: *ready-infra
+
+  inventory:
+    image: ${REGISTRY:-surge}/inventory:${TAG:-dev}
+    build: { <<: *java-build, args: { SERVICE: inventory } }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: inventory
+      PORT: "8082"
+      GRPC_PORT: "9091"
+      HOLD_LEASE: ${HOLD_LEASE:-PT5M}
+      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-PT2M}
+      PIN_GRACE: ${PIN_GRACE:-PT30S}
+    depends_on: *ready-infra
+
+  order:
+    image: ${REGISTRY:-surge}/order:${TAG:-dev}
+    build: { <<: *java-build, args: { SERVICE: order } }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: order
+      PORT: "8083"
+      # Through Toxiproxy so chaos can partition Order <-> Postgres.
+      DB_URL: jdbc:postgresql://toxiproxy:15432/${POSTGRES_DB:-surge}
+      DB_USER: orders_app
+      DB_PASSWORD: ${ORDERS_APP_PASSWORD:-orders_app_dev}
+      INVENTORY_GRPC: inventory:9091
+      PAYMENT_URL: http://toxiproxy:18000
+      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-PT2M}
+      PIN_GRACE: ${PIN_GRACE:-PT30S}
+    depends_on: *ready-infra
+
+  payment:
+    image: ${REGISTRY:-surge}/payment:${TAG:-dev}
+    build: { <<: *python-build, context: ../payment, args: { PACKAGE: surge_payment } }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: payment
+      PORT: "8000"
+      DB_DSN: postgresql://payments_app:${PAYMENTS_APP_PASSWORD:-payments_app_dev}@postgres:5432/${POSTGRES_DB:-surge}
+      ORDER_WEBHOOK_URL: http://toxiproxy:18083/payments/webhook
+    depends_on: *ready-infra
+
+  reconciler:
+    image: ${REGISTRY:-surge}/reconciler:${TAG:-dev}
+    build: { <<: *python-build, context: ../reconciler, args: { PACKAGE: surge_reconciler } }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: reconciler
+      PORT: "8001"
+      DB_DSN: postgresql://reconciler_ro:${RECONCILER_PASSWORD:-reconciler_dev}@postgres:5432/${POSTGRES_DB:-surge}
+    depends_on: *ready-infra
+
+  chaos:
+    image: ${REGISTRY:-surge}/chaos:${TAG:-dev}
+    build: { <<: *python-build, context: ../chaos, args: { PACKAGE: surge_chaos } }
+    restart: unless-stopped
+    # Needs the Docker socket to kill/restart containers. Development only.
+    user: root
+    environment:
+      <<: *common-env
+      OTEL_SERVICE_NAME: chaos
+      PORT: "8002"
+      TOXIPROXY_URL: http://toxiproxy:8474
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-surge}
+    ports: ["8002:8002"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    depends_on: *ready-infra
