@@ -23,8 +23,9 @@ body() { cat /tmp/smoke-body; }
 event=$("${compose[@]}" exec -T postgres psql -qtA -U orders_owner -d "${POSTGRES_DB:-surge}" \
   -v sections=2 -v rows=1 -v seats_per_row=6 < infra/postgres/seed.sql)
 [[ "$event" =~ ^[0-9]+$ ]] || fail "seed returned '$event'"
-mapfile -t A < <(sql "SELECT id FROM orders.seats WHERE event_id = $event AND section = 'A' ORDER BY id")
-mapfile -t B < <(sql "SELECT id FROM orders.seats WHERE event_id = $event AND section = 'B' ORDER BY id")
+# Word-split into arrays rather than `mapfile`, which macOS's bash 3.2 doesn't have.
+A=($(sql "SELECT id FROM orders.seats WHERE event_id = $event AND section = 'A' ORDER BY id"))
+B=($(sql "SELECT id FROM orders.seats WHERE event_id = $event AND section = 'B' ORDER BY id"))
 pass "seeded event $event (A: ${A[*]}; B: ${B[*]})"
 
 # --- 2. race on the real cluster ------------------------------------------------

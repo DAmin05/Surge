@@ -54,7 +54,7 @@ services:
       nofile:
         soft: ${NOFILE:-65536}
         hard: ${NOFILE:-65536}
-    ports: ["8080:8080"]
+    ports: ["${GATEWAY_PORT:-8080}:8080"]
     volumes: ["../secrets/jwt:/secrets/jwt:ro"]
     depends_on: *ready-infra
 

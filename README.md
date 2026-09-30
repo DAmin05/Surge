@@ -301,6 +301,7 @@ change:
 | `WS_CONNECT_PER_IP_PER_SEC` | `20` | WebSocket connects per second per IP |
 | `RECONCILER_CHECK_INTERVAL` | `PT5S` | How often the invariants run |
 | `KAFKA_PARTITIONS` | `12` | Partitions per topic |
+| `GATEWAY_PORT` | `8080` | Host port the gateway (web app and API) is published on; the scripts use it too |
 | `NOFILE` | `65536` | File-descriptor limit for the gateway (lower it if Docker refuses) |
 | `POSTGRES_*`, `*_PASSWORD` | dev values | Admin and per-service database roles |
 | `PAYMENT_WEBHOOK_SECRET` | dev value | HMAC key for Payment → Order webhooks |
@@ -334,6 +335,15 @@ Durations are ISO-8601 (`PT10S`, `PT2M`).
 | `make help` | This list, from the Makefile |
 
 ## Troubleshooting
+
+- **`Bind for 0.0.0.0:8080 failed: port is already allocated`**: something else on your
+  machine is using port 8080 (`lsof -nP -iTCP:8080 -sTCP:LISTEN` shows what). Stop it, or
+  publish the gateway on another port: `export GATEWAY_PORT=8081`, then `make up`,
+  `make smoke` and open http://localhost:8081. Keep the variable set for the other
+  targets too, since the scripts read it.
+- **`mapfile: command not found` or other bash errors on macOS**: the scripts work with
+  the bash 3.2 that ships with macOS. If you see this, you are on an older checkout;
+  pull `main`, or `brew install bash`.
 
 - **k6 or the benchmarks get 429s**: the per-IP limits apply to the load generator; start
   the stack with `RATE_LIMIT_IP_PER_SEC=100000 WS_CONNECT_PER_IP_PER_SEC=100000`.
