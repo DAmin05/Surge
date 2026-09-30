@@ -14,11 +14,11 @@ RUN --mount=type=secret,id=extra_ca,required=false \
       export CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt; \
     fi; \
     cargo build --release --locked; \
-    cp target/release/surge-gateway /surge-gateway
+    cp target/release/surge-gateway target/release/wsbench /
 
 FROM debian:bookworm-slim
 RUN groupadd --system --gid 10001 surge && useradd --system --uid 10001 --gid surge surge
-COPY --from=build /surge-gateway /usr/local/bin/surge-gateway
+COPY --from=build /surge-gateway /wsbench /usr/local/bin/
 USER 10001
 EXPOSE 8080
 HEALTHCHECK --interval=3s --timeout=3s --retries=20 CMD ["surge-gateway", "healthcheck"]

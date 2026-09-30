@@ -9,6 +9,16 @@ server:
   port: ${PORT:8081}
   shutdown: graceful
 
+surge:
+  admission:
+    admit-rate-per-sec: ${ADMIT_RATE_PER_SEC:200}
+    admit-interval: ${ADMIT_INTERVAL:PT0.1S}
+    token-lifetime: PT10M
+    session-lifetime: PT24H
+    keys-dir: ${JWT_KEYS_DIR:./secrets/jwt}
+    cookie-secure: ${COOKIE_SECURE:false}
+    redis-nodes: ${REDIS_NODES:localhost:6379}
+
 management:
   endpoints:
     web:

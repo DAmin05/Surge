@@ -28,6 +28,8 @@ make up        # build images, start ~25 containers, wait until all are healthy
 make seed      # create an event: 10 sections x 1,000 seats (prints the event id)
 make smoke     # end-to-end: hold race on the cluster, checkout, saga to CONFIRMED, events
 make audit     # run the invariants now
+make ws-bench  # 10k WebSocket clients vs. seat updates (start the stack with
+               #   WS_CONNECT_PER_IP_PER_SEC=100000 so one IP may open 10k sockets)
 make help      # everything else
 ```
 
@@ -73,7 +75,7 @@ Each phase ships as one PR whose exit criterion is a required CI check.
   *Exit: `docker compose up` brings everything healthy.*
 - [x] **Week 1**: Inventory (Lua holds, sweeper) + Order happy path + seat claim.
   *Exit: 1,000 virtual threads race for 1 seat → exactly 1 winner.*
-- [ ] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
+- [x] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
   *Exit: same checkout retried 100× → 1 order; injected failures all end terminal.*
 - [ ] **Week 3**: Admission, Rust gateway (tokens, rate limit, WS fan-out).
   *Exit: 10k WebSocket clients get seat updates < 200 ms p99 locally.*

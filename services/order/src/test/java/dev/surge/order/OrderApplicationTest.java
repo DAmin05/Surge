@@ -185,6 +185,22 @@ class OrderApplicationTest {
     }
 
     @Test
+    void catalogListsSectionsPricesAndSeats() throws Exception {
+        var res = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/events/" + event.eventId()))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(res.statusCode()).isEqualTo(200);
+        var body = OrderFixtures.JSON.readTree(res.body());
+        assertThat(body.get("sections")).hasSize(1);
+        assertThat(body.get("sections").get(0).get("section").asString()).isEqualTo("A");
+        assertThat(body.get("sections").get(0).get("priceCents").asLong()).isEqualTo(4200);
+        assertThat(body.get("sections").get(0).get("seats")).hasSize(4);
+
+        var missing = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/events/999999999"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(missing.statusCode()).isEqualTo(404);
+    }
+
+    @Test
     void healthIsUp() throws Exception {
         var res = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/health")).build(),
                 HttpResponse.BodyHandlers.ofString());
