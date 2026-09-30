@@ -371,12 +371,21 @@ orders open past T + one timeout-sweeper pass + 15 s slack.
   internal `PUT /internal/outbox-relay`, never routed by the gateway). The timeout storm
   stalls charges for T + grace + 5 s, so late successes land after the seats were
   released. Timed actions undo themselves.
-- Unavailable dependencies are a contract, not an error: Inventory answers `503
-  RETRY_LATER` (`Retry-After: 1`) when Redis fails or fails over, Order does the same
-  when Postgres is unreachable. Nothing was committed, so retrying is safe.
+- Unavailable dependencies are a contract, not an error: Inventory and Admission answer
+  `503 RETRY_LATER` (`Retry-After: 1`) when Redis fails or fails over, Order does the
+  same when Postgres is unreachable. Nothing was committed, so retrying is safe.
+- Redis failover: Lettuce clients reject commands while disconnected, time out after
+  2 s and refresh the topology after 2 failed reconnects, so requests fail fast and
+  retry against the promoted replica (~9 s) instead of queueing for the dead node
+  ([ADR 0010](adr/0010-redis-clients-fail-fast-during-failover.md)).
 - Redis Cluster recovery: when every node restarts with a new IP (host reboot),
   `redis-cluster-init` re-introduces them with `CLUSTER MEET` at their current
-  addresses.
+  addresses and re-points replicas whose replication link is down
+  (`CLUSTER REPLICATE`), so failover still works afterwards.
+- Headline test (`make headline`, `make headline-chaos`, [results](results/week6-headline.md)):
+  warm-up, then a 10,000-seat event sold to k6 buyers who read the live map, ramping to
+  50 new buyers/s; afterwards seats sold = tickets = confirmed items, no seat twice,
+  Redis = Postgres, 0 Reconciler violations.
 
 ## Deployment
 

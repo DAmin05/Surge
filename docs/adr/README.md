@@ -14,6 +14,7 @@ One file per decision, numbered, never rewritten: a later ADR supersedes an earl
 | [0007](0007-trace-context-in-the-outbox.md) | Trace context is stored in the outbox row and restored by the relay | Accepted |
 | [0008](0008-single-origin-through-the-gateway.md) | The gateway serves the frontend: one origin for pages, API and WebSocket | Accepted |
 | [0009](0009-chaos-judges-correctness-after-settling.md) | Chaos runs judge correctness after the system settles, not availability during the fault | Accepted |
+| [0010](0010-redis-clients-fail-fast-during-failover.md) | Redis clients fail fast during a failover; replicas are kept replicating | Accepted |
 
 Template: **Context** (what forces the decision) → **Decision** → **Consequences**
 (what gets easier, what gets harder, what we'll watch).

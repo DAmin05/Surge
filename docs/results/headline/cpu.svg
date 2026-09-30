@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 376" width="720" height="376" role="img" aria-label="Average CPU during the sell-out (100% = one core)">
+
+<style>
+  .bg { fill: #fcfcfb } .grid { stroke: #e1e0d9 } .axis { fill: #898781 }
+  .ink { fill: #0b0b0b } .ink2 { fill: #52514e } .band { fill: rgba(208,59,59,.10) }
+  .s1 { stroke: #2a78d6 } .s2 { stroke: #eb6834 } .s3 { stroke: #1baf7a } .s4 { stroke: #eda100 }
+  .f1 { fill: #2a78d6 } .f2 { fill: #eb6834 } .f3 { fill: #1baf7a } .f4 { fill: #eda100 }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #1a1a19 } .grid { stroke: #2c2c2a } .axis { fill: #898781 }
+    .ink { fill: #ffffff } .ink2 { fill: #c3c2b7 } .band { fill: rgba(208,59,59,.18) }
+    .s1 { stroke: #3987e5 } .s2 { stroke: #d95926 } .s3 { stroke: #199e70 } .s4 { stroke: #c98500 }
+    .f1 { fill: #3987e5 } .f2 { fill: #d95926 } .f3 { fill: #199e70 } .f4 { fill: #c98500 }
+  }
+</style>
+<rect class="bg" width="720" height="376" rx="10"/>
+<text class="ink" x="20" y="24" font-size="15" font-weight="600">Average CPU during the sell-out (100% = one core)</text>
+<line class="grid" x1="170.0" x2="170.0" y1="54" y2="350"/>
+<text class="axis" x="170.0" y="366" font-size="11" text-anchor="middle">0.0</text>
+<line class="grid" x1="287.5" x2="287.5" y1="54" y2="350"/>
+<text class="axis" x="287.5" y="366" font-size="11" text-anchor="middle">40</text>
+<line class="grid" x1="405.0" x2="405.0" y1="54" y2="350"/>
+<text class="axis" x="405.0" y="366" font-size="11" text-anchor="middle">80</text>
+<line class="grid" x1="522.5" x2="522.5" y1="54" y2="350"/>
+<text class="axis" x="522.5" y="366" font-size="11" text-anchor="middle">120</text>
+<line class="grid" x1="640.0" x2="640.0" y1="54" y2="350"/>
+<text class="axis" x="640.0" y="366" font-size="11" text-anchor="middle">160%</text>
+<text class="ink2" x="162" y="71" font-size="12" text-anchor="end">k6 (load generator)</text>
+<rect class="f1" x="170" y="58" width="336.3" height="18" rx="4"><title>k6 (load generator): 114%</title></rect>
+<text class="ink2" x="512.3" y="71" font-size="11">114%</text>
+<text class="ink2" x="162" y="95" font-size="12" text-anchor="end">postgres</text>
+<rect class="f1" x="170" y="82" width="77.3" height="18" rx="4"><title>postgres: 26%</title></rect>
+<text class="ink2" x="253.3" y="95" font-size="11">26%</text>
+<text class="ink2" x="162" y="119" font-size="12" text-anchor="end">admission</text>
+<rect class="f1" x="170" y="106" width="70.8" height="18" rx="4"><title>admission: 24%</title></rect>
+<text class="ink2" x="246.8" y="119" font-size="11">24%</text>
+<text class="ink2" x="162" y="143" font-size="12" text-anchor="end">gateway</text>
+<rect class="f1" x="170" y="130" width="49.1" height="18" rx="4"><title>gateway: 17%</title></rect>
+<text class="ink2" x="225.1" y="143" font-size="11">17%</text>
+<text class="ink2" x="162" y="167" font-size="12" text-anchor="end">payment</text>
+<rect class="f1" x="170" y="154" width="46.4" height="18" rx="4"><title>payment: 16%</title></rect>
+<text class="ink2" x="222.4" y="167" font-size="11">16%</text>
+<text class="ink2" x="162" y="191" font-size="12" text-anchor="end">inventory</text>
+<rect class="f1" x="170" y="178" width="42.6" height="18" rx="4"><title>inventory: 14%</title></rect>
+<text class="ink2" x="218.6" y="191" font-size="11">14%</text>
+<text class="ink2" x="162" y="215" font-size="12" text-anchor="end">order</text>
+<rect class="f1" x="170" y="202" width="31.4" height="18" rx="4"><title>order: 11%</title></rect>
+<text class="ink2" x="207.4" y="215" font-size="11">11%</text>
+<text class="ink2" x="162" y="239" font-size="12" text-anchor="end">reconciler</text>
+<rect class="f1" x="170" y="226" width="27.3" height="18" rx="4"><title>reconciler: 9%</title></rect>
+<text class="ink2" x="203.3" y="239" font-size="11">9%</text>
+<text class="ink2" x="162" y="263" font-size="12" text-anchor="end">redpanda</text>
+<rect class="f1" x="170" y="250" width="21.7" height="18" rx="4"><title>redpanda: 7%</title></rect>
+<text class="ink2" x="197.7" y="263" font-size="11">7%</text>
+<text class="ink2" x="162" y="287" font-size="12" text-anchor="end">toxiproxy</text>
+<rect class="f1" x="170" y="274" width="20.3" height="18" rx="4"><title>toxiproxy: 7%</title></rect>
+<text class="ink2" x="196.3" y="287" font-size="11">7%</text>
+<text class="ink2" x="162" y="311" font-size="12" text-anchor="end">jaeger</text>
+<rect class="f1" x="170" y="298" width="18.2" height="18" rx="4"><title>jaeger: 6%</title></rect>
+<text class="ink2" x="194.2" y="311" font-size="11">6%</text>
+<text class="ink2" x="162" y="335" font-size="12" text-anchor="end">redis-3</text>
+<rect class="f1" x="170" y="322" width="17.0" height="18" rx="4"><title>redis-3: 6%</title></rect>
+<text class="ink2" x="193.0" y="335" font-size="11">6%</text>
+</svg>

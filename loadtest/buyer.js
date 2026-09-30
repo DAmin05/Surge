@@ -10,12 +10,17 @@
 // yields a second order id fails the run (`idempotency_broken`).
 //
 //   k6 run -e EVENT_ID=1 -e RATE=20 -e DURATION=60s buyer.js
+//   k6 run -e EVENT_ID=1 -e STAGES=30s:50,4m:50 buyer.js      # ramp to 50/s, hold
 
 import http from "k6/http";
+import { WebSocket } from "k6/websockets";
 import { check, sleep } from "k6";
 import { Counter, Trend } from "k6/metrics";
 
 const BASE = __ENV.BASE_URL || "http://gateway:8080";
+// LIVE_MAP=1: like a browser, read the seat map (WebSocket snapshot) before picking
+// seats, so buyers go for seats that are actually free. Without it they pick blind.
+const LIVE_MAP = __ENV.LIVE_MAP === "1";
 const EVENT_ID = Number(__ENV.EVENT_ID);
 const RATE = Number(__ENV.RATE || 20);
 const DURATION = __ENV.DURATION || "60s";
@@ -25,15 +30,25 @@ const WALK_AWAY = Number(__ENV.WALK_AWAY || 0.03);
 const ORDER_WAIT_S = Number(__ENV.ORDER_WAIT_S || 90);
 const TERMINAL = ["CONFIRMED", "CANCELLED", "FAILED"];
 
+// STAGES="30s:50,4m:50" ramps the arrival rate instead (duration:buyers per second).
+const STAGES = (__ENV.STAGES || "")
+  .split(",")
+  .filter(Boolean)
+  .map((st) => {
+    const [duration, target] = st.split(":");
+    return { duration, target: Number(target) };
+  });
+const PEAK = STAGES.length ? Math.max(...STAGES.map((s) => s.target)) : RATE;
+
 export const options = {
   scenarios: {
     buyers: {
-      executor: "constant-arrival-rate",
-      rate: RATE,
+      ...(STAGES.length
+        ? { executor: "ramping-arrival-rate", startRate: 1, stages: STAGES }
+        : { executor: "constant-arrival-rate", rate: RATE, duration: DURATION }),
       timeUnit: "1s",
-      duration: DURATION,
-      preAllocatedVUs: Math.max(10, RATE * 5),
-      maxVUs: Math.max(50, RATE * 40),
+      preAllocatedVUs: Math.max(10, PEAK * 5),
+      maxVUs: Math.max(50, PEAK * 40),
       gracefulStop: `${ORDER_WAIT_S + 30}s`,
     },
   },
@@ -124,10 +139,39 @@ function admitted() {
   return null;
 }
 
-function hold(token, sections) {
+/** The live map's view: for each section, the seats neither sold nor held. */
+function availability(sections) {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/ws/events/${EVENT_ID}`);
+    const done = (value) => {
+      resolve(value);
+      ws.close();
+    };
+    const timer = setTimeout(() => done(null), 5000);
+    ws.onmessage = (msg) => {
+      const f = JSON.parse(msg.data);
+      if (f.type !== "snapshot") return;
+      clearTimeout(timer);
+      const taken = new Map(f.sections.map((x) => [x.section, new Set([...x.sold, ...x.held])]));
+      done(sections.map((s) => ({ section: s.section, seats: s.seats.filter((id) => !taken.get(s.section)?.has(id)) })));
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      done(null);
+    };
+  });
+}
+
+async function hold(token, sections) {
   for (let attempt = 0; attempt < 4; attempt++) {
-    const s = Math.random() < SKEW ? sections[0] : pick(sections);
-    const n = pick([1, 2, 2, 2, 3, 4]);
+    let view = sections;
+    if (LIVE_MAP) {
+      view = (await availability(sections)) || sections;
+      if (view.every((s) => s.seats.length === 0)) return null; // sold out
+    }
+    let s = Math.random() < SKEW ? view[0] : pick(view);
+    if (s.seats.length === 0) s = view.reduce((a, b) => (b.seats.length > a.seats.length ? b : a));
+    const n = Math.min(pick([1, 2, 2, 2, 3, 4]), s.seats.length);
     const res = http.post(
       `${BASE}/api/holds`,
       JSON.stringify({ eventId: EVENT_ID, section: s.section, seatIds: sample(s.seats, n) }),
@@ -181,7 +225,7 @@ function settle(orderId) {
   return "UNSETTLED";
 }
 
-export default function (data) {
+export default async function (data) {
   http.cookieJar().clear(BASE);
   const s = http.post(`${BASE}/api/session`, null, { tags: { name: "session" } });
   if (!check(s, { session: (r) => r.status === 200 || r.status === 201 })) return outcomes.add(1, { result: "no_session" });
@@ -189,7 +233,7 @@ export default function (data) {
   const token = admitted();
   if (!token) return outcomes.add(1, { result: "not_admitted" });
 
-  const holdId = hold(token, data.sections);
+  const holdId = await hold(token, data.sections);
   if (!holdId) return outcomes.add(1, { result: "no_seats" });
 
   const r = Math.random();

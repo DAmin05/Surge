@@ -1,6 +1,7 @@
 #!/bin/sh
 # One-shot: form a 3-primary / 3-replica cluster from redis-1..6 if it isn't formed
-# yet, then wait until every node reports cluster_state:ok. Safe to re-run.
+# yet, then wait until every node reports cluster_state:ok and every replica is
+# replicating. Safe to re-run.
 set -eu
 NODES="redis-1 redis-2 redis-3 redis-4 redis-5 redis-6"
 
@@ -38,5 +39,24 @@ for n in $NODES; do
     sleep 0.5
   done
 done
+# Replicas replicate from the address they last knew. After every node moved, the
+# cluster can report ok while replicas sit at master_link_status:down, and a replica
+# that isn't in sync is never promoted: a dead primary's slots stay down until it
+# returns. CLUSTER REPLICATE re-points a replica at its primary's current address.
+for n in $NODES; do
+  if redis-cli -h "$n" info replication | grep -q 'master_link_status:down'; then
+    primary=$(redis-cli -h "$n" cluster nodes | awk '/myself/ {print $4}')
+    echo "$n: replication link down, re-pointing at $primary"
+    redis-cli -h "$n" cluster replicate "$primary" >/dev/null || true
+  fi
+done
+for n in $NODES; do
+  tries=0
+  while redis-cli -h "$n" info replication | grep -q 'master_link_status:down' && [ $tries -lt 120 ]; do
+    tries=$((tries + 1))
+    sleep 0.5
+  done
+done
+
 redis-cli -h redis-1 cluster nodes
 echo "cluster ready"

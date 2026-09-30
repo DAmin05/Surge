@@ -9,7 +9,7 @@ help: ## Show targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}'
 
 ## ---------------------------------------------------------------- stack
-.PHONY: keys rotate-keys up up-fanout up-chaos load chaos check down nuke ps logs seed smoke saga-storm ws-bench audit faults
+.PHONY: keys rotate-keys up up-fanout up-chaos load chaos headline headline-chaos charts check down nuke ps logs seed smoke saga-storm ws-bench audit faults
 # Keys are generated inside the keygen container so they end up owned by the uid the
 # services run as (10001), on Linux as well as on Docker Desktop.
 keys: ## Generate token signing keys into secrets/ (only if absent)
@@ -63,6 +63,15 @@ up-chaos: ## Start the stack with short saga timings for chaos runs (T = grace =
 
 chaos: ## Chaos scenarios with k6 buyers, 0 violations required (after make up-chaos; RUNS=10 SCENARIOS=a,b)
 	$(CHAOS_ENV) scripts/chaos_run.py --runs $${RUNS:-10} $${SCENARIOS:+--scenarios $$SCENARIOS}
+
+headline: ## Warm-up, then sell out a 10,000-seat event at 50 buyers/s; verifies 0 oversold (start with RATE_LIMIT_IP_PER_SEC=100000 WS_CONNECT_PER_IP_PER_SEC=100000)
+	scripts/headline.py --name sellout
+
+headline-chaos: ## The headline sell-out with a Redis primary killed 60 s in
+	scripts/headline.py --name chaos --chaos kill-redis-primary --chaos-at 60 --chaos-duration 30
+
+charts: ## Render docs/results/headline/*.svg from the headline JSON
+	scripts/charts.py
 
 up-fanout: ## Start only the fan-out path (gateway, inventory, order + infra), as CI benchmarks it
 	WS_CONNECT_PER_IP_PER_SEC=100000 docker compose up -d --build gateway inventory order
