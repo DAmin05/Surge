@@ -9,6 +9,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import io.micrometer.core.instrument.Gauge;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -22,6 +26,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Publishes outbox rows to Kafka. Each batch is claimed with
@@ -35,12 +40,25 @@ public final class OutboxRelay implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
-    private record Row(long id, String aggregateId, String topic, String payload) {}
+    private record Row(long id, String aggregateId, String topic, String payload, Map<String, String> headers) {}
+
+    private static final TextMapGetter<Map<String, String>> GETTER = new TextMapGetter<>() {
+        @Override
+        public Iterable<String> keys(Map<String, String> carrier) {
+            return carrier.keySet();
+        }
+
+        @Override
+        public String get(Map<String, String> carrier, String key) {
+            return carrier == null ? null : carrier.get(key);
+        }
+    };
 
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
     private final KafkaProducer<String, String> producer;
     private final int batchSize;
+    private final JsonMapper json = JsonMapper.builder().build();
 
     public OutboxRelay(JdbcClient jdbc, TransactionTemplate tx, MeterRegistry meters,
             @Value("${surge.order.kafka-bootstrap}") String bootstrap,
@@ -78,20 +96,27 @@ public final class OutboxRelay implements AutoCloseable {
     int publishBatch() {
         Integer n = tx.execute(status -> {
             List<Row> rows = jdbc.sql("""
-                    SELECT id, aggregate_id, topic, payload::text FROM outbox
+                    SELECT id, aggregate_id, topic, payload::text, headers::text FROM outbox
                      WHERE published_at IS NULL
                      ORDER BY id
                      LIMIT ?
                        FOR UPDATE SKIP LOCKED""")
                     .param(batchSize)
-                    .query((rs, i) -> new Row(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)))
+                    .query((rs, i) -> new Row(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                            headers(rs.getString(5))))
                     .list();
             if (rows.isEmpty()) {
                 return 0;
             }
             var acks = new ArrayList<Future<RecordMetadata>>(rows.size());
+            var propagator = GlobalOpenTelemetry.getPropagators().getTextMapPropagator();
             for (Row row : rows) {
-                acks.add(producer.send(new ProducerRecord<>(row.topic(), row.aggregateId(), row.payload())));
+                // Publish inside the trace that wrote the row: the producer span (and the
+                // context it passes on in Kafka headers) joins the original checkout.
+                Context origin = propagator.extract(Context.root(), row.headers(), GETTER);
+                try (Scope ignored = origin.makeCurrent()) {
+                    acks.add(producer.send(new ProducerRecord<>(row.topic(), row.aggregateId(), row.payload())));
+                }
             }
             for (Future<RecordMetadata> ack : acks) {
                 awaitAck(ack);
@@ -102,6 +127,14 @@ public final class OutboxRelay implements AutoCloseable {
             return rows.size();
         });
         return n == null ? 0 : n;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> headers(String jsonText) {
+        if (jsonText == null || jsonText.isBlank()) {
+            return Map.of();
+        }
+        return json.readValue(jsonText, Map.class);
     }
 
     private static void awaitAck(Future<RecordMetadata> ack) {

@@ -9,7 +9,10 @@
 //! | `GET /api/events/{e}` | none | Order catalog |
 //! | `POST /api/holds`, `DELETE /api/holds/{id}` | admission, for that event | Inventory |
 //! | `POST /api/checkout` | admission, for the hold's event | Order |
+//! | `GET /api/events` | none | Order: events on sale |
+//! | `GET /api/orders/{id}` | session cookie | Order: the buyer's own order |
 //! | `GET /ws/events/{e}` | none | seat map (snapshot + live events) |
+//! | anything else | none | the Next.js frontend (same origin: no CORS) |
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -64,11 +67,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/session", post(session))
         .route("/api/queue/{event_id}/join", post(queue))
         .route("/api/queue/{event_id}/position", get(queue))
+        .route("/api/events", get(events))
         .route("/api/events/{event_id}", get(catalog))
+        .route("/api/orders/{order_id}", get(order))
         .route("/api/holds", post(hold))
         .route("/api/holds/{hold_id}", delete(release))
         .route("/api/checkout", post(checkout))
         .route("/ws/events/{event_id}", get(ws))
+        .fallback(frontend)
+        .route_layer(axum::middleware::from_fn(crate::telemetry::trace_requests))
         .with_state(state)
 }
 
@@ -215,6 +222,9 @@ async fn forward(state: &AppState, to: Upstream<'_>, headers: &HeaderMap, body: 
     if let Some(user) = user {
         req = req.header("x-user-id", user);
     }
+    for (k, v) in crate::telemetry::outgoing_headers() {
+        req = req.header(k, v);
+    }
     let started = Instant::now();
     let res = match req.send().await {
         Ok(r) => r,
@@ -305,6 +315,107 @@ async fn catalog(
         Ok(v) => Json(v.as_ref().clone()).into_response(),
         Err(_) => error(StatusCode::NOT_FOUND, "UNKNOWN_EVENT"),
     }
+}
+
+async fn events(
+    State(s): St,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = admit(&s, &headers, peer, None) {
+        return *r;
+    }
+    let url = format!("{}/events", s.config.order_url);
+    let to = Upstream {
+        route: "events",
+        method: Method::GET,
+        url,
+        user: None,
+        with_cookie: false,
+    };
+    forward(&s, to, &headers, Bytes::new()).await
+}
+
+async fn order(
+    State(s): St,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(order_id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let claims = match admit(&s, &headers, peer, Some(TokenType::Session)) {
+        Ok(c) => c.expect("session claims"),
+        Err(r) => return *r,
+    };
+    let url = format!("{}/orders/{order_id}", s.config.order_url);
+    let to = Upstream {
+        route: "order",
+        method: Method::GET,
+        url,
+        user: Some(&claims.sub),
+        with_cookie: false,
+    };
+    forward(&s, to, &headers, Bytes::new()).await
+}
+
+/// Request headers never passed to the frontend: hop-by-hop, identity, credentials.
+const FRONTEND_DROP_REQUEST: [&str; 8] = [
+    "host",
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "upgrade",
+    "x-user-id",
+    "cookie",
+    "authorization",
+];
+/// Response headers rebuilt by the gateway rather than copied.
+const FRONTEND_DROP_RESPONSE: [&str; 4] = [
+    "connection",
+    "keep-alive",
+    "transfer-encoding",
+    "content-length",
+];
+
+/// Everything that isn't the API is the frontend. Pages, assets and the Next.js router's
+/// requests (`RSC`, `Next-Router-*` headers) pass through with their headers intact.
+async fn frontend(
+    State(s): St,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Err(r) = admit(&s, &headers, peer, None) {
+        return *r;
+    }
+    let Some(base) = s.config.frontend_url.as_deref() else {
+        return error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    };
+    let path = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let mut req = s
+        .http
+        .request(method, format!("{base}{path}"))
+        .timeout(Duration::from_secs(30))
+        .body(body);
+    for (name, value) in headers.iter() {
+        if !FRONTEND_DROP_REQUEST.contains(&name.as_str()) {
+            req = req.header(name, value);
+        }
+    }
+    let res = match req.send().await {
+        Ok(r) => r,
+        Err(_) => return error(StatusCode::SERVICE_UNAVAILABLE, "FRONTEND_UNAVAILABLE"),
+    };
+    let mut out = Response::builder().status(res.status().as_u16());
+    for (name, value) in res.headers().iter() {
+        if !FRONTEND_DROP_RESPONSE.contains(&name.as_str()) {
+            out = out.header(name, value);
+        }
+    }
+    let body = res.bytes().await.unwrap_or_default();
+    out.body(Body::from(body))
+        .unwrap_or_else(|_| error(StatusCode::BAD_GATEWAY, "BAD_GATEWAY"))
 }
 
 #[derive(Deserialize)]
@@ -557,6 +668,7 @@ mod tests {
             admission_url: up.into(),
             inventory_url: up.into(),
             order_url: up.into(),
+            frontend_url: Some(up.into()),
             kafka_bootstrap: None,
             ip_rate,
             user_rate: 1000,
@@ -709,6 +821,26 @@ mod tests {
         assert_eq!(seen[0]["cookie"], Value::Null);
         assert_eq!(seen[1]["path"], "/session");
         assert_eq!(seen[1]["cookie"], "surge_session=old");
+    }
+
+    #[tokio::test]
+    async fn other_paths_are_the_frontend_without_credentials() {
+        let keys = Keys::generate();
+        let (up, seen) = upstream().await;
+        let (gw, _) = gateway(&keys, &up, 1000).await;
+        let res = reqwest::Client::new()
+            .get(format!("http://{gw}/checkout/42?x=1"))
+            .header("rsc", "1")
+            .header("cookie", "surge_session=secret")
+            .header("x-user-id", "mallory")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0]["path"], "/checkout/42");
+        assert_eq!(seen[0]["cookie"], Value::Null);
+        assert_eq!(seen[0]["user"], Value::Null);
     }
 
     #[tokio::test]

@@ -201,6 +201,29 @@ class OrderApplicationTest {
     }
 
     @Test
+    void buyersSeeTheirOwnOrdersOnly() throws Exception {
+        inventory.holds.put("h9", new FakeInventory.Hold("olivia", event.eventId(), "A", List.of(event.seats("A").get(1))));
+        var created = checkout("olivia", "h9");
+        long orderId = Long.parseLong(created.body().replaceAll(".*\"orderId\":(\\d+).*", "$1"));
+
+        var mine = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/orders/" + orderId))
+                .header("X-User-Id", "olivia").build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(mine.statusCode()).isEqualTo(200);
+        var body = OrderFixtures.JSON.readTree(mine.body());
+        assertThat(body.get("state").asString()).isEqualTo("PAYMENT_PENDING");
+        assertThat(body.get("seats")).hasSize(1);
+        assertThat(body.get("seats").get(0).get("issued").asBoolean()).isFalse();
+
+        var theirs = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/orders/" + orderId))
+                .header("X-User-Id", "mallory").build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(theirs.statusCode()).isEqualTo(404);
+
+        var events = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/events")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(events.body()).contains("\"eventId\":" + event.eventId());
+    }
+
+    @Test
     void healthIsUp() throws Exception {
         var res = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/health")).build(),
                 HttpResponse.BodyHandlers.ofString());

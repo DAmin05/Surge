@@ -10,12 +10,14 @@ import logging
 import time
 from typing import Any, Protocol
 
+from opentelemetry import trace
 from prometheus_client import Counter
 
 from .faults import Faults
 from .store import Store
 
 log = logging.getLogger(__name__)
+tracer = trace.get_tracer("surge.payment")
 
 CHARGES = Counter("payment_charges_total", "Charges settled", ["status"])
 REQUESTS = Counter("payment_requests_total", "Payment requests seen", ["result"])
@@ -63,7 +65,17 @@ class Processor:
         return len(keys)
 
     async def charge(self, payment_key: str) -> None:
+        # Runs as its own task; asyncio copies the context, so this span (and the
+        # webhook under it) stays in the checkout's trace.
+        with tracer.start_as_current_span(
+            "payment charge", attributes={"payment.key": payment_key}
+        ) as span:
+            await self._charge(payment_key, span)
+
+    async def _charge(self, payment_key: str, span: trace.Span) -> None:
         plan = self._faults.plan()
+        span.set_attribute("payment.outcome", plan.outcome)
+        span.set_attribute("payment.deliveries", plan.deliveries)
         await asyncio.sleep(plan.delay_s)
         status = "CAPTURED" if plan.outcome == "SUCCEEDED" else "FAILED"
         if not await self._store.settle(payment_key, status):

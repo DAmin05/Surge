@@ -106,6 +106,59 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  # Week-4 exit criterion: a buyer completes a purchase in the browser while a second
+  # browser sees the seat go held, then sold, live; and one trace spans gateway,
+  # order, inventory and payment.
+  browser:
+    name: "Exit: browser purchase, one trace"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - uses: docker/setup-buildx-action@v4
+      - name: Start stack
+        working-directory: .
+        run: |
+          docker compose build
+          docker compose up -d
+          TIMEOUT=300 scripts/check-stack.sh
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Buyer checks out; a watcher sees the seat go held then sold
+        run: npx playwright test
+      - name: One trace spans gateway, order, inventory and payment
+        working-directory: .
+        run: scripts/trace-check.sh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with: { name: playwright-report, path: frontend/playwright-report, retention-days: 7 }
+      - name: Dump state on failure
+        if: failure()
+        working-directory: .
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200 gateway frontend order inventory payment
+      - name: Tear down
+        if: always()
+        working-directory: .
+        run: docker compose down -v --remove-orphans
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   rust:
     name: Rust (gateway)
     runs-on: ubuntu-latest

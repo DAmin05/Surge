@@ -205,3 +205,23 @@ def test_webhook_gives_up_eventually() -> None:
             assert await sender.send("k8", "SUCCEEDED") is False
 
     asyncio.run(run())
+
+
+def test_webhook_carries_the_trace_context() -> None:
+    from opentelemetry.sdk.trace import TracerProvider
+
+    tracer = TracerProvider().get_tracer("test")
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with tracer.start_as_current_span("charge") as span:
+                await WebhookSender(client, "http://o", "s").send("k9", "SUCCEEDED")
+                trace_id = format(span.get_span_context().trace_id, "032x")
+        assert trace_id in seen[0].headers["traceparent"]
+
+    asyncio.run(run())

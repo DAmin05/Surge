@@ -8,7 +8,7 @@ variable "TAG"       { default = "dev" }
 variable "PLATFORMS" { default = "" }
 
 group "default" {
-  targets = ["gateway", "java", "python"]
+  targets = ["gateway", "java", "python", "frontend"]
 }
 
 target "_common" {
@@ -39,4 +39,10 @@ target "python" {
   dockerfile = "../infra/docker/python.Dockerfile"
   args       = { PACKAGE = "surge_${svc}" }
   tags       = ["${REGISTRY}/${svc}:${TAG}"]
+}
+
+target "frontend" {
+  inherits = ["_common"]
+  context  = "frontend"
+  tags     = ["${REGISTRY}/frontend:${TAG}"]
 }

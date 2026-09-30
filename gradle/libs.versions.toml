@@ -7,6 +7,8 @@ spring-boot = "4.1.1"
 protoc = "4.35.1"
 protobuf-gradle-plugin = "0.10.0"
 grpc = "1.83.1"
+# Attached to every JVM service at runtime (-javaagent), not a compile dependency.
+otel-javaagent = "2.31.1"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -22,6 +24,8 @@ postgresql = { module = "org.postgresql:postgresql" }
 lettuce = { module = "io.lettuce:lettuce-core" }
 kafka-clients = { module = "org.apache.kafka:kafka-clients" }
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }
+otel-api = { module = "io.opentelemetry:opentelemetry-api" }
+otel-javaagent = { module = "io.opentelemetry.javaagent:opentelemetry-javaagent", version.ref = "otel-javaagent" }
 
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protoc" }
 grpc-protobuf = { module = "io.grpc:grpc-protobuf" }
