@@ -52,8 +52,13 @@ stealing. Fewer load-generator threads: no clear change, only more noise.
   it lands at 212–229 ms. With more cores, or with the generator on another host, the
   same code has headroom.
 - **CI regression guard, required check `Exit: WebSocket fan-out p99 < 200 ms`:**
-  5k clients, the same 200 ms budget, zero missed updates, on a standard 4-vCPU runner
-  (101–149 ms p99 on this box).
+  5k clients, the same 200 ms budget, zero missed updates, on a standard 4-vCPU runner.
+  The job starts only the fan-out path (`make up-fanout`: gateway, inventory, order and
+  their infrastructure). With the full stack, the reconciler, payment, chaos and the
+  observability services share the same 4 cores, and p99 swung between 125 and 229 ms
+  across identical runs; `main` failed at 214 ms on the week-3 merge before any
+  week-4 code existed. With only the fan-out path running, five runs on this box gave
+  p99 76–142 ms (max 137–228 ms), every update delivered.
 
 ### Local run (developer machine)
 

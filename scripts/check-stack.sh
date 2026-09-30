@@ -6,6 +6,9 @@
 # unhealthy service, and after TIMEOUT seconds otherwise.
 #
 #   scripts/check-stack.sh [extra docker compose args...]
+#
+# SERVICES="a b" checks only a partial stack started with `docker compose up -d a b`:
+# those services plus every dependency Compose created for them.
 set -euo pipefail
 
 TIMEOUT="${TIMEOUT:-300}"
@@ -16,7 +19,11 @@ deadline=$((SECONDS + TIMEOUT))
 while :; do
   pending=()
   failed=()
-  expected="$("${compose[@]}" config --services | sort)"
+  if [[ -n "${SERVICES:-}" ]]; then
+    expected="$( { tr ' ' '\n' <<<"$SERVICES"; "${compose[@]}" ps -a --format '{{.Service}}'; } | grep . | sort -u)"
+  else
+    expected="$("${compose[@]}" config --services | sort)"
+  fi
   status="$("${compose[@]}" ps -a --format '{{.Service}} {{.State}} {{.Health}} {{.ExitCode}}' | sort)"
 
   for svc in $expected; do

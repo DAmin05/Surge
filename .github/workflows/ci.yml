@@ -81,20 +81,23 @@ jobs:
   # under 200 ms p99, measured locally (`make ws-bench`, docs/results). A 4-vCPU runner
   # shares its cores between the stack and a 10k-client generator, so CI guards
   # against regressions at 5k clients with the same budget and zero missed updates.
+  # Only the fan-out path runs (gateway, inventory, order and their infrastructure),
+  # so the reconciler, payment, chaos and observability don't compete for the cores.
   fanout:
     name: "Exit: WebSocket fan-out p99 < 200 ms"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       WS_CONNECT_PER_IP_PER_SEC: "100000"
+      FANOUT_SERVICES: gateway inventory order
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
-      - name: Start stack
+      - name: Start the fan-out path
         run: |
-          docker compose build
-          docker compose up -d
-          TIMEOUT=300 scripts/check-stack.sh
+          docker compose build gateway inventory order
+          docker compose up -d $FANOUT_SERVICES
+          SERVICES="$FANOUT_SERVICES" TIMEOUT=300 scripts/check-stack.sh
       - name: 5,000 WebSocket clients, 100 seat updates, every one delivered
         run: BENCH_CLIENTS=5000 scripts/ws-bench.sh
       - name: Dump state on failure
