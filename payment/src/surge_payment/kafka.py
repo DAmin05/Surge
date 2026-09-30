@@ -6,10 +6,12 @@ import logging
 from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from opentelemetry import propagate, trace
 
 from .processor import Processor
 
 log = logging.getLogger(__name__)
+tracer = trace.get_tracer("surge.payment")
 
 ORDER_EVENTS = "order-events"
 PAYMENT_EVENTS = "payment-events"
@@ -55,7 +57,20 @@ async def consume_orders(bootstrap: str, processor: Processor, stop: asyncio.Eve
             batch = await consumer.getmany(timeout_ms=500, max_records=200)
             for records in batch.values():
                 for record in records:
-                    await _handle_with_retry(processor, record.value, stop)
+                    # Continue the checkout's trace: Order's relay put its context in
+                    # the message headers.
+                    carrier = {k: v.decode() for k, v in (record.headers or ()) if v is not None}
+                    with tracer.start_as_current_span(
+                        f"{ORDER_EVENTS} process",
+                        context=propagate.extract(carrier),
+                        kind=trace.SpanKind.CONSUMER,
+                        attributes={
+                            "messaging.system": "kafka",
+                            "messaging.destination.name": ORDER_EVENTS,
+                            "messaging.kafka.message.offset": record.offset,
+                        },
+                    ):
+                        await _handle_with_retry(processor, record.value, stop)
             if batch:
                 await consumer.commit()
     finally:

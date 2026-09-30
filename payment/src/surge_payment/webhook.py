@@ -8,6 +8,7 @@ import logging
 import time
 
 import httpx
+from opentelemetry import propagate
 from prometheus_client import Counter
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,8 @@ class WebhookSender:
             "Content-Type": "application/json",
             "Surge-Signature": sign(payload, self._secret),
         }
+        # traceparent: Order's webhook handler joins the same trace.
+        propagate.inject(headers)
         deadline = time.monotonic() + self._give_up_after_s
         backoff = self._first_backoff_s
         while True:

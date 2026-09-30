@@ -27,15 +27,20 @@ RUN --mount=type=secret,id=extra_ca,required=false \
       export GRADLE_OPTS="-Dhttps.proxyHost=${hp%:*} -Dhttps.proxyPort=${hp##*:}"; \
     fi; \
     ./gradlew --no-daemon --console=plain ":services:${SERVICE}:bootJar"; \
-    cp "services/${SERVICE}/build/libs/${SERVICE}.jar" /app.jar
+    cp "services/${SERVICE}/build/libs/${SERVICE}.jar" /app.jar; \
+    cp "services/${SERVICE}/build/otel/opentelemetry-javaagent.jar" /otel-agent.jar
 
 FROM eclipse-temurin:21-jre
 RUN groupadd --system --gid 10001 surge && useradd --system --uid 10001 --gid surge surge
 WORKDIR /app
 COPY --from=build /app.jar /app/app.jar
+COPY --from=build /otel-agent.jar /app/otel-agent.jar
 USER 10001
 ENV PORT=8080
 HEALTHCHECK --interval=3s --timeout=3s --retries=40 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/actuator/health/readiness" >/dev/null || exit 1
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+# Tracing: the agent reads OTEL_* from the environment (endpoint, service name). Metrics
+# stay with Micrometer/Prometheus; logs stay on stdout.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -javaagent:/app/otel-agent.jar" \
+    OTEL_METRICS_EXPORTER=none OTEL_LOGS_EXPORTER=none
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

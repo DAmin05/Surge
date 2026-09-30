@@ -59,8 +59,8 @@ faults: ## Show or set Payment faults (make faults SET='{"failure_rate":0.4}')
 	@docker compose exec -T inventory curl -s $(if $(SET),-X PUT -H 'Content-Type: application/json' -d '$(SET)',) http://payment:8000/faults; echo
 
 ## ---------------------------------------------------------------- build & test
-.PHONY: test test-java test-rust test-python lint images images-multiarch
-test: test-java test-rust test-python ## Run every test suite
+.PHONY: test test-java test-rust test-python test-frontend e2e lint images images-multiarch
+test: test-java test-rust test-python test-frontend ## Run every test suite
 
 test-java: ## Java: build + tests (Testcontainers needs Docker)
 	./gradlew build
@@ -73,6 +73,13 @@ test-python: ## Python: ruff + pytest for each service
 	  echo "== $$s"; \
 	  (cd $$s && uv sync --locked -q && uv run ruff check . && uv run ruff format --check . && uv run pytest -q) || exit 1; \
 	done
+
+test-frontend: ## Frontend: typecheck + unit tests
+	cd frontend && npm ci --no-audit --no-fund && npm run typecheck && npm test
+
+e2e: ## Browser buyer flow + one trace across services (needs `make up`)
+	cd frontend && npx playwright test
+	./scripts/trace-check.sh
 
 images: ## Build all images for the current platform
 	docker buildx bake -f docker-bake.hcl --load

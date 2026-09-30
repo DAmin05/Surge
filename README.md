@@ -28,6 +28,7 @@ make up        # build images, start ~25 containers, wait until all are healthy
 make seed      # create an event: 10 sections x 1,000 seats (prints the event id)
 make smoke     # end-to-end: hold race on the cluster, checkout, saga to CONFIRMED, events
 make audit     # run the invariants now
+make e2e       # browser buyer flow (Playwright) + one trace across all services
 make ws-bench  # 10k WebSocket clients vs. seat updates (start the stack with
                #   WS_CONNECT_PER_IP_PER_SEC=100000 so one IP may open 10k sockets)
 make help      # everything else
@@ -35,7 +36,7 @@ make help      # everything else
 
 | What | Where |
 |---|---|
-| Gateway | http://localhost:8080 |
+| Web app (buy, war room, chaos) | http://localhost:8080 |
 | Grafana | http://localhost:3001 |
 | Prometheus | http://localhost:9090 |
 | Jaeger | http://localhost:16686 |
@@ -59,7 +60,7 @@ libs/contracts/     generated gRPC stubs + event DTOs only
 payment/            Python/FastAPI mock gateway    (db/migration: payments schema)
 reconciler/         Python: invariant checks
 chaos/              Python: Docker SDK + Toxiproxy
-frontend/           Next.js (week 4)
+frontend/           Next.js: buyer flow, war room, chaos panel
 proto/              gRPC contracts
 schemas/            event JSON schemas
 loadtest/           k6 scenarios (week 5)
@@ -77,9 +78,9 @@ Each phase ships as one PR whose exit criterion is a required CI check.
   *Exit: 1,000 virtual threads race for 1 seat → exactly 1 winner.*
 - [x] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
   *Exit: same checkout retried 100× → 1 order; injected failures all end terminal.*
-- [ ] **Week 3**: Admission, Rust gateway (tokens, rate limit, WS fan-out).
+- [x] **Week 3**: Admission, Rust gateway (tokens, rate limit, WS fan-out).
   *Exit: 10k WebSocket clients get seat updates < 200 ms p99 locally.*
-- [ ] **Week 4**: Frontend (buyer flow, war room, chaos panel), OTel, metrics.
+- [x] **Week 4**: Frontend (buyer flow, war room, chaos panel), OTel, metrics.
   *Exit: full buyer flow in the browser; one trace spans all services.*
 - [ ] **Week 5**: k6 scenarios, chaos scenarios, tuning.
   *Exit: 20 chaos runs, 0 invariant violations.*

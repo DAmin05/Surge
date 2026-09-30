@@ -41,3 +41,9 @@ management:
   metrics:
     tags:
       service: order
+    # Latency histograms for the war room's checkout p50/p99 (histogram_quantile).
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms,1s,2s

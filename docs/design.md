@@ -24,6 +24,7 @@ See [ADR 0001](adr/0001-postgres-is-the-source-of-truth.md).
 | payment | Python / FastAPI | mock gateway with fault injection, refunds |
 | reconciler | Python | invariants, continuous + post-sale audit |
 | chaos | Python | Docker SDK + Toxiproxy fault controller |
+| frontend | Next.js / TypeScript | buyer flow, war room, chaos panel (served through the gateway) |
 
 Java: Spring Boot, `spring.threads.virtual.enabled=true`, Gradle Kotlin DSL,
 multi-module, all versions in `gradle/libs.versions.toml`. The only shared module is
@@ -79,10 +80,18 @@ authenticated routes also a per-user one. The gateway strips any client-sent
 |---|---|---|
 | `POST /api/session` | none | Admission `/session` (cookies pass both ways) |
 | `POST /api/queue/{e}/join`, `GET /api/queue/{e}/position` | session cookie | Admission |
+| `GET /api/events` | none | Order: events on sale |
 | `GET /api/events/{e}` | none | Order catalog (sections, prices, seats), cached 30 s |
+| `GET /api/orders/{id}` | session cookie | Order: the caller's own order (404 for anyone else's) |
 | `POST /api/holds` | admission, `eventId` in body must match | Inventory |
 | `DELETE /api/holds/{id}`, `POST /api/checkout` | admission, hold id's event must match | Inventory / Order |
 | `GET /ws/events/{e}` | none (per-IP connect limit) | live seat map |
+| anything else | none (per-IP limit) | frontend (`FRONTEND_URL`), cookies and identity headers stripped |
+
+The browser sees one origin: pages, API and WebSocket all come from the gateway, so
+there is no CORS and the HttpOnly session cookie just works
+([ADR 0008](adr/0008-single-origin-through-the-gateway.md)). Every response carries
+`x-trace-id`, the trace the request started.
 
 **Seat map protocol (`/ws/events/{e}`):** the gateway subscribes the socket to the
 event's broadcast channel *before* taking the snapshot, then sends
@@ -250,6 +259,37 @@ so consumers are idempotent and decide by state, not arrival order. Lag:
   only those with the same epoch and a higher `seq`. A `seq` gap or an epoch change →
   request a new snapshot. The map can lose an event but cannot stay wrong.
 
+## Frontend
+
+Next.js (App Router, standalone output), reached only through the gateway.
+
+- **Buyer flow** (`/events/{e}`): session → waiting room (polls position every 1 s;
+  the seat map is live while waiting) → pick ≤ 4 seats in one section → hold with a
+  countdown → checkout with one `Idempotency-Key` per hold, retried with the same key
+  on 5xx, network errors and `REQUEST_IN_PROGRESS` → poll the order until terminal.
+  Seats someone else takes drop out of the selection as the events arrive.
+- **Seat map client** (`frontend/lib/seatmap.ts`, unit-tested): the protocol under
+  *Live seat map*; re-renders at most once per animation frame.
+- **War room** (`/war-room`): `/x/metrics` queries Prometheus and the chaos log
+  server-side and returns one JSON document. Shows the reconciler's violation count as
+  the headline, orders by saga state, KPIs, checkout p50/p99, fan-out p99 against the
+  200 ms goal, and throughput; chaos actions are shaded bands on every time series.
+- **Chaos panel** (`/chaos`): runs and stops chaos actions via `/x/chaos/*`, a proxy
+  that passes only the controller's own routes.
+
+## Observability
+
+- **Traces:** OTLP to Jaeger. Java services use the OpenTelemetry agent (version in the
+  catalog); the gateway uses `tracing-opentelemetry`; Payment instruments FastAPI,
+  its Kafka consumer, the charge and the webhook call.
+- **Through the outbox:** the trace context is written into `outbox.headers` in the
+  same transaction as the event, and the relay publishes inside that context, so a
+  checkout trace continues through Kafka into Payment, back through the webhook and
+  on to Inventory's sold marker
+  ([ADR 0007](adr/0007-trace-context-in-the-outbox.md)).
+- **Metrics:** Prometheus scrapes every service. Order adds `orders_by_state{state}`;
+  the chaos controller exports `chaos_actions_total` and `chaos_active`.
+
 ## Data
 
 Postgres 16, one database, **one schema per service**:
@@ -309,6 +349,10 @@ orders open past T + one timeout-sweeper pass + 15 s slack.
   an inventory instance, payment timeout storm, duplicate/out-of-order webhooks,
   Order↔Postgres partition, Redpanda restart during relay, late success after
   release-and-resale (refund), relay paused past grace (`holds_expired_while_reserved`).
+- Chaos controller (`chaos`, `GET /actions`, `POST /actions/{id}` with an optional
+  `durationS`, `DELETE /actions/{id}`, `POST /reset`, `GET /events`): kill the Redis
+  primary, kill inventory, payment failures/timeouts/duplicate callbacks, partition or
+  slow Order↔Postgres (Toxiproxy), restart Redpanda. Timed actions undo themselves.
 
 ## Deployment
 

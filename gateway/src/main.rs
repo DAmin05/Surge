@@ -9,9 +9,10 @@ use surge_gateway::{
     limits::Limits,
     routes::{router, AppState},
     snapshot::Snapshots,
+    telemetry,
     tokens::{load_keys, Verifier},
 };
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() {
@@ -20,9 +21,11 @@ async fn main() {
         std::process::exit(healthcheck());
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .json()
+    let tracer = telemetry::tracer_provider();
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer().json())
+        .with(tracer.as_ref().map(telemetry::layer))
         .init();
 
     let metrics = PrometheusBuilder::new()

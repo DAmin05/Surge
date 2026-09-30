@@ -46,6 +46,8 @@ services:
       RATE_LIMIT_IP_PER_SEC: ${RATE_LIMIT_IP_PER_SEC:-50}
       RATE_LIMIT_USER_PER_SEC: ${RATE_LIMIT_USER_PER_SEC:-10}
       WS_CONNECT_PER_IP_PER_SEC: ${WS_CONNECT_PER_IP_PER_SEC:-20}
+      # Pages are proxied from the frontend, so the browser sees one origin.
+      FRONTEND_URL: http://frontend:3000
     # 10k WebSocket clients need 10k sockets. NOFILE lowers it where the Docker
     # daemon's own limit is smaller.
     ulimits: &many-sockets
@@ -136,6 +138,15 @@ services:
     ports: ["8002:8002"]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
     depends_on: *ready-infra
+
+  # Buyer flow, war room and chaos panel. Reached only through the gateway.
+  frontend:
+    image: ${REGISTRY:-surge}/frontend:${TAG:-dev}
+    build: { context: ../frontend }
+    restart: unless-stopped
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      CHAOS_URL: http://chaos:8002
 
   # WebSocket fan-out benchmark (`make ws-bench`): not part of the normal stack.
   wsbench:

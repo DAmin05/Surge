@@ -7,6 +7,7 @@ pub mod kafka;
 pub mod limits;
 pub mod routes;
 pub mod snapshot;
+pub mod telemetry;
 pub mod tokens;
 
 pub fn now_millis() -> u64 {

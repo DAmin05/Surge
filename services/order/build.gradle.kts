@@ -12,6 +12,8 @@ dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.grpc.netty.shaded)
     implementation(libs.kafka.clients)
+    // API only; the Java agent supplies the implementation at runtime (no-op in tests).
+    implementation(libs.otel.api)
     runtimeOnly(libs.postgresql)
     runtimeOnly(libs.micrometer.prometheus)
 

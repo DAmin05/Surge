@@ -9,6 +9,8 @@ pub struct Config {
     pub admission_url: String,
     pub inventory_url: String,
     pub order_url: String,
+    /// The Next.js frontend; every path that isn't `/api`, `/ws` or ops goes there.
+    pub frontend_url: Option<String>,
     pub kafka_bootstrap: Option<String>,
     /// Requests per second per client IP (burst = 2x).
     pub ip_rate: u32,
@@ -43,6 +45,7 @@ impl Config {
             admission_url: var("ADMISSION_URL", "http://localhost:8081"),
             inventory_url: var("INVENTORY_URL", "http://localhost:8082"),
             order_url: var("ORDER_URL", "http://localhost:8083"),
+            frontend_url: env::var("FRONTEND_URL").ok().filter(|v| !v.is_empty()),
             kafka_bootstrap: env::var("KAFKA_BOOTSTRAP").ok().filter(|v| !v.is_empty()),
             ip_rate: num("RATE_LIMIT_IP_PER_SEC", 50),
             user_rate: num("RATE_LIMIT_USER_PER_SEC", 10),

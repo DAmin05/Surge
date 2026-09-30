@@ -31,6 +31,17 @@ public class CatalogController {
         this.jdbc = jdbc;
     }
 
+    public record EventSummary(long eventId, String name, OffsetDateTime startsAt, int capacity) {}
+
+    /** Events on sale, newest first. */
+    @GetMapping("/events")
+    public List<EventSummary> events() {
+        return jdbc.sql("SELECT id, name, starts_at, capacity FROM events ORDER BY id DESC LIMIT 50")
+                .query((rs, i) -> new EventSummary(rs.getLong(1), rs.getString(2),
+                        rs.getObject(3, OffsetDateTime.class), rs.getInt(4)))
+                .list();
+    }
+
     @GetMapping("/events/{eventId}")
     public ResponseEntity<Catalog> catalog(@PathVariable long eventId) {
         record Event(String name, OffsetDateTime startsAt, int capacity) {}
