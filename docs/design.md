@@ -341,7 +341,7 @@ orders open past T + one timeout-sweeper pass + 15 s slack.
 - WebSocket fan-out (`make ws-bench`): 10,000 clients on one event, 100 seat
   changes at 20/s; every client must receive every change, p99 < 200 ms from
   Inventory's change to the client's read. Judged locally at 10k; CI guards at 5k with
-  the same budget ([results](results/week3-websocket-fanout.md)).
+  the same budget, running only the fan-out path (`make up-fanout`) ([results](results/week3-websocket-fanout.md)).
 - Saga storm (`make saga-storm`, CI): buyers vs. a faulty Payment (30 % declines,
   15 % stalls past T, 30 % duplicate and 25 % out-of-order callbacks), same-key
   checkout retries; every order must end terminal with 0 violations.

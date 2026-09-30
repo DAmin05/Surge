@@ -17,8 +17,26 @@ else
   redis-cli --cluster create $args --cluster-replicas 1 --cluster-yes
 fi
 
+# Nodes gossip by IP. If they all restarted with new IPs (host reboot, daemon
+# restart), nodes.conf only knows the old ones and no node can reach a peer. MEET
+# re-introduces every node at its current address; it's a no-op for connected peers.
+meet() {
+  for a in $NODES; do
+    for b in $NODES; do
+      [ "$a" = "$b" ] && continue
+      ip=$(getent hosts "$b" | awk '{print $1}')
+      [ -n "$ip" ] && redis-cli -h "$a" cluster meet "$ip" 6379 >/dev/null 2>&1 || true
+    done
+  done
+}
+
 for n in $NODES; do
-  until redis-cli -h "$n" cluster info | grep -q 'cluster_state:ok'; do sleep 0.5; done
+  tries=0
+  until redis-cli -h "$n" cluster info | grep -q 'cluster_state:ok'; do
+    tries=$((tries + 1))
+    [ $((tries % 20)) -eq 0 ] && meet
+    sleep 0.5
+  done
 done
 redis-cli -h redis-1 cluster nodes
 echo "cluster ready"
