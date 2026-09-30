@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: inventory
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8082}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      service: inventory

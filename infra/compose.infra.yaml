@@ -1,0 +1,261 @@
+# Infrastructure: Redis Cluster, Redpanda, Postgres + Flyway, Toxiproxy, observability.
+# Included from ../compose.yaml. Every setting comes from the environment, with dev
+# defaults (see ../.env.example).
+
+x-redis-node: &redis-node
+  image: redis:7.4-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-flyway: &flyway
+  image: flyway/flyway:11
+  restart: "no"
+  depends_on:
+    postgres: { condition: service_healthy }
+
+services:
+  # ---------------------------------------------------------------- Redis Cluster
+  # 3 primaries + 3 replicas. Nodes announce hostnames, not IPs, so a restarted
+  # container that comes back with a new IP rejoins the cluster.
+  redis-1:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-1 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-1:/data]
+  redis-2:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-2 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-2:/data]
+  redis-3:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-3 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-3:/data]
+  redis-4:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-4 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-4:/data]
+  redis-5:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-5 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-5:/data]
+  redis-6:
+    <<: *redis-node
+    command: >-
+      redis-server --port 6379 --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf --cluster-node-timeout 5000
+      --cluster-announce-hostname redis-6 --cluster-preferred-endpoint-type hostname
+      --appendonly yes --appendfsync everysec
+    volumes: [redis-6:/data]
+
+  redis-cluster-init:
+    image: redis:7.4-alpine
+    restart: "no"
+    entrypoint: ["/bin/sh", "/cluster-init.sh"]
+    volumes: ["./redis/cluster-init.sh:/cluster-init.sh:ro"]
+    depends_on:
+      redis-1: { condition: service_healthy }
+      redis-2: { condition: service_healthy }
+      redis-3: { condition: service_healthy }
+      redis-4: { condition: service_healthy }
+      redis-5: { condition: service_healthy }
+      redis-6: { condition: service_healthy }
+
+  # --------------------------------------------------------------------- Redpanda
+  redpanda:
+    image: redpandadata/redpanda:v25.2.1
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports: ["19092:19092"]
+    volumes: [redpanda:/var/lib/redpanda/data]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  redpanda-topics:
+    image: redpandadata/redpanda:v25.2.1
+    restart: "no"
+    entrypoint: ["/bin/bash", "/create-topics.sh"]
+    environment:
+      PARTITIONS: ${KAFKA_PARTITIONS:-12}
+    volumes: ["./redpanda/create-topics.sh:/create-topics.sh:ro"]
+    depends_on:
+      redpanda: { condition: service_healthy }
+
+  # --------------------------------------------------------------------- Postgres
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-surge}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-surge_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-surge_admin_dev}
+    command: ["postgres", "-c", "max_connections=300"]
+    ports: ["5432:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Bootstrap runs as the admin user: roles, schemas, default privileges.
+  db-bootstrap:
+    <<: *flyway
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-surge}
+      FLYWAY_USER: ${POSTGRES_ADMIN_USER:-surge_admin}
+      FLYWAY_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-surge_admin_dev}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_TABLE: flyway_bootstrap_history
+      FLYWAY_PLACEHOLDERS_ORDERS_OWNER_PASSWORD: ${ORDERS_OWNER_PASSWORD:-orders_owner_dev}
+      FLYWAY_PLACEHOLDERS_ORDERS_APP_PASSWORD: ${ORDERS_APP_PASSWORD:-orders_app_dev}
+      FLYWAY_PLACEHOLDERS_PAYMENTS_OWNER_PASSWORD: ${PAYMENTS_OWNER_PASSWORD:-payments_owner_dev}
+      FLYWAY_PLACEHOLDERS_PAYMENTS_APP_PASSWORD: ${PAYMENTS_APP_PASSWORD:-payments_app_dev}
+      FLYWAY_PLACEHOLDERS_RECONCILER_PASSWORD: ${RECONCILER_PASSWORD:-reconciler_dev}
+    volumes: ["./postgres/bootstrap:/flyway/sql:ro"]
+
+  # Each service's migrations run as that service's owner role, in its own schema.
+  db-migrate-orders:
+    <<: *flyway
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-surge}
+      FLYWAY_USER: orders_owner
+      FLYWAY_PASSWORD: ${ORDERS_OWNER_PASSWORD:-orders_owner_dev}
+      FLYWAY_SCHEMAS: orders
+      FLYWAY_CREATE_SCHEMAS: "false"
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    volumes: ["../services/order/db/migration:/flyway/sql:ro"]
+    depends_on:
+      db-bootstrap: { condition: service_completed_successfully }
+
+  db-migrate-payments:
+    <<: *flyway
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-surge}
+      FLYWAY_USER: payments_owner
+      FLYWAY_PASSWORD: ${PAYMENTS_OWNER_PASSWORD:-payments_owner_dev}
+      FLYWAY_SCHEMAS: payments
+      FLYWAY_CREATE_SCHEMAS: "false"
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+    volumes: ["../payment/db/migration:/flyway/sql:ro"]
+    depends_on:
+      db-bootstrap: { condition: service_completed_successfully }
+
+  # ------------------------------------------------------------------------ Keys
+  # Generates Ed25519 signing keys into ../secrets only if they don't exist yet
+  # (same script as `make keys`).
+  keygen:
+    image: alpine/openssl:3.5.8
+    restart: "no"
+    entrypoint: ["/bin/sh", "/keys.sh", "/secrets/jwt"]
+    environment:
+      KEY_OWNER: "10001:10001"
+    volumes:
+      - "../scripts/keys.sh:/keys.sh:ro"
+      - "../secrets:/secrets"
+
+  # -------------------------------------------------------------------- Toxiproxy
+  # Chaos sits between selected services (proxies in toxiproxy/toxiproxy.json).
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    restart: unless-stopped
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    ports: ["8474:8474"]
+    volumes: ["./toxiproxy:/config:ro"]
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  # ---------------------------------------------------------------- Observability
+  jaeger:
+    image: jaegertracing/jaeger:2.9.0
+    restart: unless-stopped
+    ports: ["16686:16686"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:16686/"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    ports: ["9090:9090"]
+    volumes: ["./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports: ["3001:3000"]
+    volumes:
+      - "./grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./grafana/dashboards:/var/lib/grafana/dashboards:ro"
+    depends_on:
+      prometheus: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  redis-1:
+  redis-2:
+  redis-3:
+  redis-4:
+  redis-5:
+  redis-6:
+  redpanda:
+  postgres:

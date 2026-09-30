@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package surge.inventory.v1;
+
+option java_multiple_files = true;
+option java_package = "dev.surge.contracts.inventory.v1";
+
+// Called by Order before the Postgres claim (see docs/design.md, "Checkout ordering").
+service InventoryService {
+  // One Lua script, all-or-nothing across the order's seats: every hold exists and
+  // belongs to user_id; each lease is extended to now + T + grace and each seat's
+  // section sequence is incremented (SeatHoldExtended).
+  rpc ValidateAndPinHold(ValidateAndPinHoldRequest) returns (ValidateAndPinHoldResponse);
+
+  // Best-effort release after a lost claim; the lease expires on its own otherwise.
+  rpc ReleaseHold(ReleaseHoldRequest) returns (ReleaseHoldResponse);
+}
+
+message ValidateAndPinHoldRequest {
+  string hold_id = 1;
+  string user_id = 2;
+}
+
+message ValidateAndPinHoldResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    NOT_FOUND = 2;      // hold missing or expired
+    WRONG_OWNER = 3;
+    REBUILDING = 4;     // section epoch missing; sold-set replay in progress
+  }
+  Status status = 1;
+  int64 event_id = 2;
+  string section = 3;
+  repeated int64 seat_ids = 4;
+  int64 lease_expires_at_epoch_ms = 5;
+}
+
+message ReleaseHoldRequest {
+  string hold_id = 1;
+  string user_id = 2;
+}
+
+message ReleaseHoldResponse {
+  bool released = 1;
+}
