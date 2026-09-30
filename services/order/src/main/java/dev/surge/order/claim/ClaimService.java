@@ -1,15 +1,18 @@
 package dev.surge.order.claim;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
+import dev.surge.contracts.events.OrderEvent;
 import dev.surge.order.config.OrderProperties;
+import dev.surge.order.outbox.Outbox;
+import dev.surge.order.saga.OrderState;
+import dev.surge.order.saga.OrderStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The seat claim: where "never oversell" is actually decided (ADR 0001).
@@ -27,31 +30,47 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 public class ClaimService {
 
-    private static final String ORDER_EVENTS_TOPIC = "order-events";
-
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
+    private final OrderStore orders;
+    private final Outbox outbox;
     private final OrderProperties props;
-    private final JsonMapper json;
     private final MeterRegistry meters;
 
-    public ClaimService(JdbcClient jdbc, TransactionTemplate tx, OrderProperties props, JsonMapper json,
-            MeterRegistry meters) {
+    public ClaimService(JdbcClient jdbc, TransactionTemplate tx, OrderStore orders, Outbox outbox,
+            OrderProperties props, MeterRegistry meters) {
         this.jdbc = jdbc;
         this.tx = tx;
+        this.orders = orders;
+        this.outbox = outbox;
         this.props = props;
-        this.json = json;
         this.meters = meters;
     }
 
     public ClaimResult claim(String userId, long eventId, String section, List<Long> seatIds) {
+        return claim(userId, eventId, section, seatIds, null, claimed -> { });
+    }
+
+    /**
+     * @param holdId        the Redis hold behind this claim, released or deleted when
+     *                      the saga ends
+     * @param beforeCommit  runs inside the claim transaction after a successful claim;
+     *                      throwing from it rolls the claim back (used to commit the
+     *                      idempotent response atomically with the order)
+     */
+    public ClaimResult claim(String userId, long eventId, String section, List<Long> seatIds, String holdId,
+            Consumer<ClaimResult.Claimed> beforeCommit) {
         Long[] seats = seatIds.stream().distinct().sorted().toArray(Long[]::new);
         if (seats.length != seatIds.size() || seats.length == 0) {
             throw new IllegalArgumentException("seat ids must be distinct and non-empty");
         }
         ClaimResult result;
         try {
-            result = tx.execute(status -> claimInTransaction(userId, eventId, section, seats));
+            result = tx.execute(status -> {
+                ClaimResult.Claimed claimed = claimInTransaction(userId, eventId, section, seats, holdId);
+                beforeCommit.accept(claimed);
+                return claimed;
+            });
         } catch (Rollback r) {
             result = new ClaimResult.Rejected(r.reason);
         }
@@ -60,7 +79,8 @@ public class ClaimService {
         return result;
     }
 
-    private ClaimResult.Claimed claimInTransaction(String userId, long eventId, String section, Long[] seats) {
+    private ClaimResult.Claimed claimInTransaction(String userId, long eventId, String section, Long[] seats,
+            String holdId) {
         // 1. Serialize this user's checkouts for this event.
         jdbc.sql("SELECT pg_advisory_xact_lock(?, hashtext(?))")
                 .params(Math.toIntExact(eventId), userId)
@@ -99,11 +119,12 @@ public class ClaimService {
         // 4. The order row first: seats.order_id references it.
         UUID paymentKey = UUID.randomUUID();
         long orderId = jdbc.sql("""
-                INSERT INTO orders (user_id, event_id, section, state, amount_cents, payment_key)
-                VALUES (?, ?, ?, 'SEAT_RESERVED', ?, ?)
+                INSERT INTO orders (user_id, event_id, section, state, amount_cents, payment_key, hold_id)
+                VALUES (?, ?, ?, 'CREATED', ?, ?, ?)
                 RETURNING id""")
-                .params(userId, eventId, section, amount, paymentKey)
+                .params(userId, eventId, section, amount, paymentKey, holdId)
                 .query(Long.class).single();
+        orders.record(orderId, null, OrderState.CREATED, "checkout");
 
         // 5. The decision. Fewer rows than seats: someone else owns one. Roll back all.
         int claimed = jdbc.sql("""
@@ -121,16 +142,12 @@ public class ClaimService {
                     .update();
         }
 
-        // 6. Ask for payment in the same transaction (transactional outbox).
-        String payload = json.writeValueAsString(Map.of(
-                "type", "PaymentRequested",
-                "orderId", orderId,
-                "paymentKey", paymentKey.toString(),
-                "userId", userId,
-                "amountCents", amount));
-        jdbc.sql("INSERT INTO outbox (aggregate_id, topic, payload) VALUES (?, ?, ?::jsonb)")
-                .params(Long.toString(orderId), ORDER_EVENTS_TOPIC, payload)
-                .update();
+        orders.transition(orderId, OrderState.CREATED, OrderState.SEAT_RESERVED, "seats claimed");
+
+        // 6. Ask for payment in the same transaction (transactional outbox). T, the
+        //    payment timeout, runs from here.
+        outbox.append(OrderEvent.paymentRequested(orderId, userId, paymentKey.toString(), amount));
+        orders.transition(orderId, OrderState.SEAT_RESERVED, OrderState.PAYMENT_PENDING, "payment requested");
 
         return new ClaimResult.Claimed(orderId, paymentKey, amount, List.of(seats));
     }

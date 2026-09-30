@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/seat-status.schema.json",
+  "title": "SeatStatus",
+  "description": "Compacted seat-status topic, keyed by seatId: one record per sold seat. Inventory replays it to rebuild the Redis sold set after a failover.",
+  "type": "object",
+  "required": ["eventId", "section", "seatId", "orderId", "soldAtMs"],
+  "properties": {
+    "eventId": { "type": "integer" },
+    "section": { "type": "string" },
+    "seatId": { "type": "integer" },
+    "orderId": { "type": "integer" },
+    "soldAtMs": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

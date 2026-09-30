@@ -9,6 +9,7 @@ One file per decision, numbered, never rewritten: a later ADR supersedes an earl
 | [0002](0002-schema-per-service.md) | One Postgres, one schema and role set per service | Accepted |
 | [0003](0003-token-signing-keys.md) | Ed25519 tokens, keys generated once, `kid` keysets for rotation | Accepted |
 | [0004](0004-seat-events-without-outbox.md) | Seat events are published without an outbox; the map self-heals | Accepted |
+| [0005](0005-orchestrated-saga.md) | The checkout saga is orchestrated by Order, not choreographed | Accepted |
 
 Template: **Context** (what forces the decision) → **Decision** → **Consequences**
 (what gets easier, what gets harder, what we'll watch).

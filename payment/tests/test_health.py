@@ -20,5 +20,15 @@ def test_starts_with_otel_export_configured(monkeypatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
     monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
     monkeypatch.setenv("OTEL_LOGS_EXPORTER", "none")
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "none")
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200
+
+
+def test_faults_are_configurable_at_runtime() -> None:
+    client = TestClient(app)
+    assert client.put("/faults", json={"failure_rate": 0.4}).json()["failure_rate"] == 0.4
+    assert client.get("/faults").json()["failure_rate"] == 0.4
+    assert client.put("/faults", json={"failure_rate": 2}).status_code == 422
+    assert client.put("/faults", json={"nonsense": 1}).status_code == 422
+    assert client.delete("/faults").json()["failure_rate"] == 0.0

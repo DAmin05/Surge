@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 public class LuaScripts {
 
     public enum Script {
-        HOLD("hold"), PIN("pin"), RELEASE("release"), EXPIRED("expired"), SNAPSHOT("snapshot");
+        HOLD("hold"), PIN("pin"), RELEASE("release"), SOLD("sold"), EXPIRED("expired"), SNAPSHOT("snapshot");
 
         final String file;
 

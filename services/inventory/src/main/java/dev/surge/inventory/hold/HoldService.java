@@ -5,6 +5,7 @@ import static dev.surge.inventory.redis.LuaScripts.Script.HOLD;
 import static dev.surge.inventory.redis.LuaScripts.Script.PIN;
 import static dev.surge.inventory.redis.LuaScripts.Script.RELEASE;
 import static dev.surge.inventory.redis.LuaScripts.Script.SNAPSHOT;
+import static dev.surge.inventory.redis.LuaScripts.Script.SOLD;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,8 +14,10 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import dev.surge.contracts.events.SeatEvent;
+import dev.surge.contracts.events.SeatStatus;
 import dev.surge.inventory.config.InventoryProperties;
 import dev.surge.inventory.events.SeatEventPublisher;
+import dev.surge.inventory.events.SoldLedger;
 import dev.surge.inventory.redis.LuaScripts;
 import dev.surge.inventory.redis.SectionKeys;
 import io.lettuce.core.Range;
@@ -35,15 +38,17 @@ public class HoldService {
     private final LuaScripts scripts;
     private final EpochRebuilder epochs;
     private final SeatEventPublisher events;
+    private final SoldLedger ledger;
     private final InventoryProperties props;
     private final MeterRegistry meters;
 
     public HoldService(RedisClusterCommands<String, String> redis, LuaScripts scripts, EpochRebuilder epochs,
-            SeatEventPublisher events, InventoryProperties props, MeterRegistry meters) {
+            SeatEventPublisher events, SoldLedger ledger, InventoryProperties props, MeterRegistry meters) {
         this.redis = redis;
         this.scripts = scripts;
         this.epochs = epochs;
         this.events = events;
+        this.ledger = ledger;
         this.props = props;
         this.meters = meters;
     }
@@ -140,6 +145,36 @@ public class HoldService {
      */
     public boolean release(String holdIdValue, String userId) {
         return release(HoldId.parse(holdIdValue), userId, false) == ReleaseOutcome.RELEASED;
+    }
+
+    /**
+     * An order was confirmed: its seats are sold for good. Records them in the durable
+     * ledger first, then writes Redis sold markers and deletes the hold, so a retry
+     * after a crash in between only repeats idempotent steps.
+     */
+    public void markSold(long orderId, long eventId, String section, List<Long> seatIds, String holdId) {
+        long now = System.currentTimeMillis();
+        ledger.record(seatIds.stream().map(s -> new SeatStatus(eventId, section, s, orderId, now)).toList());
+
+        var keys = new SectionKeys(eventId, section);
+        String hold = holdId == null ? "none" : holdId;
+        List<Long> seats = seatIds.stream().sorted().toList();
+        List<Object> r = scripts.run(SOLD, keys.scriptKeys(hold, seats), args(hold, "", "0", seats));
+
+        long lapsed = (Long) r.get(2);
+        if (lapsed > 0) {
+            // The lease didn't outlive the saga: the map showed a sold seat as free for a while.
+            meters.counter("holds_expired_while_reserved").increment(lapsed);
+        }
+        String epoch = (String) r.get(1);
+        var out = new ArrayList<SeatEvent>();
+        for (int i = 3; i + 1 < r.size(); i += 2) {
+            out.add(event(SeatEvent.Type.SEAT_SOLD, keys, Long.parseLong((String) r.get(i)), epoch,
+                    (Long) r.get(i + 1), null, null, null));
+        }
+        events.publish(out);
+        // The buyer's best-effort limit entries age out at the lease end; the Postgres
+        // claim counts confirmed seats authoritatively.
     }
 
     /** Releases every hold in every known section whose lease has lapsed. */

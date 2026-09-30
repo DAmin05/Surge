@@ -19,4 +19,13 @@ public class EventsConfig {
         }
         return new KafkaSeatEventPublisher(props.kafkaBootstrap(), json, meters);
     }
+
+    @Bean
+    SoldLedger soldLedger(InventoryProperties props, JsonMapper json) {
+        if (props.kafkaBootstrap() == null || props.kafkaBootstrap().isBlank()) {
+            LoggerFactory.getLogger(SoldLedger.class).warn("KAFKA_BOOTSTRAP not set: sold seats are not durable");
+            return SoldLedger.NONE;
+        }
+        return new KafkaSoldLedger(props.kafkaBootstrap(), json);
+    }
 }

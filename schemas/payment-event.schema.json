@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/payment-event.schema.json",
+  "title": "PaymentEvent",
+  "description": "payment-events topic, keyed by paymentKey. For observers only (Reconciler, dashboard); the webhook drives the saga.",
+  "type": "object",
+  "required": ["type", "paymentKey", "orderId", "amountCents", "occurredAtMs"],
+  "properties": {
+    "type": { "enum": ["PAYMENT_SUCCEEDED", "PAYMENT_FAILED", "PAYMENT_REFUNDED"] },
+    "paymentKey": { "type": "string", "format": "uuid" },
+    "orderId": { "type": "integer" },
+    "amountCents": { "type": "integer" },
+    "occurredAtMs": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

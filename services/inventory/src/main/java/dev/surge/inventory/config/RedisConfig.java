@@ -36,10 +36,10 @@ public class RedisConfig {
             return RedisClient.create(resources, uris.getFirst()).connect().sync();
         }
         var client = RedisClusterClient.create(resources, uris);
-        // Follow failovers quickly: refresh on MOVED/ASK/reconnect and periodically.
+        // Follow failovers quickly. Adaptive refresh (on MOVED/ASK/reconnects) is on by
+        // default in Lettuce 7; add a periodic refresh for failovers nobody trips over.
         client.setOptions(ClusterClientOptions.builder()
                 .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
-                        .enableAllAdaptiveRefreshTriggers()
                         .enablePeriodicRefresh(Duration.ofSeconds(5))
                         .build())
                 .build());

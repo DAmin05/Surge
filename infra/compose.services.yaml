@@ -10,6 +10,10 @@ x-python-build: &python-build
   dockerfile: ../infra/docker/python.Dockerfile
 
 x-common-env: &common-env
+  # Saga timing, shared so every service agrees on T and the grace period.
+  PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-PT2M}
+  PIN_GRACE: ${PIN_GRACE:-PT30S}
+  PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-webhook-secret}
   # Traces go to Jaeger over OTLP; metrics are scraped by Prometheus instead.
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
   OTEL_METRICS_EXPORTER: none
@@ -66,8 +70,6 @@ services:
       PORT: "8082"
       GRPC_PORT: "9091"
       HOLD_LEASE: ${HOLD_LEASE:-PT5M}
-      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-PT2M}
-      PIN_GRACE: ${PIN_GRACE:-PT30S}
     depends_on: *ready-infra
 
   order:
@@ -84,8 +86,6 @@ services:
       DB_PASSWORD: ${ORDERS_APP_PASSWORD:-orders_app_dev}
       INVENTORY_GRPC: inventory:9091
       PAYMENT_URL: http://toxiproxy:18000
-      PAYMENT_TIMEOUT: ${PAYMENT_TIMEOUT:-PT2M}
-      PIN_GRACE: ${PIN_GRACE:-PT30S}
     depends_on: *ready-infra
 
   payment:
@@ -109,6 +109,7 @@ services:
       OTEL_SERVICE_NAME: reconciler
       PORT: "8001"
       DB_DSN: postgresql://reconciler_ro:${RECONCILER_PASSWORD:-reconciler_dev}@postgres:5432/${POSTGRES_DB:-surge}
+      CHECK_INTERVAL: ${RECONCILER_CHECK_INTERVAL:-PT5S}
     depends_on: *ready-infra
 
   chaos:

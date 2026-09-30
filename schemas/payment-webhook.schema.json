@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://surge.dev/schemas/payment-webhook.schema.json",
+  "title": "PaymentWebhook",
+  "description": "POST from Payment to Order at /payments/webhook. Authoritative for the saga. Signed: header Surge-Signature = 'sha256=' + hex(HMAC-SHA256(secret, raw body)). May be duplicated, delayed or reordered.",
+  "type": "object",
+  "required": ["paymentKey", "status", "occurredAtMs"],
+  "properties": {
+    "paymentKey": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["SUCCEEDED", "FAILED"] },
+    "occurredAtMs": { "type": "integer" }
+  },
+  "additionalProperties": false
+}
