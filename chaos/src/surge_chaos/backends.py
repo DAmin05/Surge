@@ -103,5 +103,15 @@ class HttpPaymentFaults:
         r.raise_for_status()
 
 
+class HttpOrderControl:
+    def __init__(self, client: httpx.AsyncClient, url: str):
+        self.client = client
+        self.url = url.rstrip("/")
+
+    async def set_relay_paused(self, paused: bool) -> None:
+        r = await self.client.put(f"{self.url}/internal/outbox-relay", json={"paused": paused})
+        r.raise_for_status()
+
+
 def redis_nodes() -> list[str]:
     return [n for n in os.environ.get("REDIS_NODES", "").split(",") if n]

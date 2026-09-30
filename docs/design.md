@@ -345,14 +345,38 @@ orders open past T + one timeout-sweeper pass + 15 s slack.
 - Saga storm (`make saga-storm`, CI): buyers vs. a faulty Payment (30 % declines,
   15 % stalls past T, 30 % duplicate and 25 % out-of-order callbacks), same-key
   checkout retries; every order must end terminal with 0 violations.
-- Chaos scenarios: kill a Redis primary mid-sale (lost holds + sold-set rebuild), kill
-  an inventory instance, payment timeout storm, duplicate/out-of-order webhooks,
-  Order↔Postgres partition, Redpanda restart during relay, late success after
-  release-and-resale (refund), relay paused past grace (`holds_expired_while_reserved`).
+- Load (`make load`, [`loadtest/buyer.js`](../loadtest/buyer.js)): k6 buyers through the
+  gateway at `RATE` per second. Each is a fresh anonymous session: waiting room, hold
+  1-4 seats in one section (`SKEW` of them in the first), then release (`RELEASE`),
+  walk away (`WALK_AWAY`) or check out with an `Idempotency-Key`, retried with the
+  same key on 5xx, network errors and `REQUEST_IN_PROGRESS`, and wait for the order to
+  settle. The run fails on a second order id for one key or on any status outside the
+  contract (a 500 is always a bug).
+- Chaos scenarios (`make up-chaos && make chaos`,
+  [`scripts/chaos_run.py`](../scripts/chaos_run.py)): kill a Redis primary mid-sale
+  (lost holds + sold-set rebuild), kill Inventory, payment declines, payment timeout
+  storm (late successes refunded), late success after release-and-resale (A refunded,
+  B keeps the seat), duplicate/out-of-order webhooks, Order↔Postgres partition and
+  latency, Redpanda restart, outbox relay paused past the grace with 2-4 s charges so
+  confirmations land while it's paused (`holds_expired_while_reserved` must move). Each run seeds an event, sends k6 buyers,
+  injects the fault mid-sale, and after the saga settles requires: every order
+  terminal, no pending charge, every late success refunded, no holds left, each
+  section's Redis sold set equal to Postgres' sold seats, 0 Reconciler violations, and
+  the fault's own effect ([ADR 0009](adr/0009-chaos-judges-correctness-after-settling.md)).
+  CI runs 20 (four runners × five; [results](results/week5-chaos.md)).
 - Chaos controller (`chaos`, `GET /actions`, `POST /actions/{id}` with an optional
   `durationS`, `DELETE /actions/{id}`, `POST /reset`, `GET /events`): kill the Redis
   primary, kill inventory, payment failures/timeouts/duplicate callbacks, partition or
-  slow Order↔Postgres (Toxiproxy), restart Redpanda. Timed actions undo themselves.
+  slow Order↔Postgres (Toxiproxy), restart Redpanda, pause the outbox relay (Order's
+  internal `PUT /internal/outbox-relay`, never routed by the gateway). The timeout storm
+  stalls charges for T + grace + 5 s, so late successes land after the seats were
+  released. Timed actions undo themselves.
+- Unavailable dependencies are a contract, not an error: Inventory answers `503
+  RETRY_LATER` (`Retry-After: 1`) when Redis fails or fails over, Order does the same
+  when Postgres is unreachable. Nothing was committed, so retrying is safe.
+- Redis Cluster recovery: when every node restarts with a new IP (host reboot),
+  `redis-cluster-init` re-introduces them with `CLUSTER MEET` at their current
+  addresses.
 
 ## Deployment
 

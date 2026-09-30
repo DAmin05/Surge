@@ -9,7 +9,7 @@ help: ## Show targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}'
 
 ## ---------------------------------------------------------------- stack
-.PHONY: keys rotate-keys up up-fanout check down nuke ps logs seed smoke saga-storm ws-bench audit faults
+.PHONY: keys rotate-keys up up-fanout up-chaos load chaos check down nuke ps logs seed smoke saga-storm ws-bench audit faults
 # Keys are generated inside the keygen container so they end up owned by the uid the
 # services run as (10001), on Linux as well as on Docker Desktop.
 keys: ## Generate token signing keys into secrets/ (only if absent)
@@ -51,6 +51,18 @@ saga-storm: ## Buyers vs. a faulty Payment; all orders must end terminal, 0 viol
 
 ws-bench: ## 10k WebSocket clients vs. seat updates, p99 < 200 ms (start with WS_CONNECT_PER_IP_PER_SEC=100000)
 	scripts/ws-bench.sh
+
+load: ## k6 buyers against the running stack (EVENT_ID=.. RATE=20 DURATION=60s SKEW=0.5)
+	docker compose --profile load run --rm --no-deps -e EVENT_ID -e RATE -e DURATION -e SKEW k6 run buyer.js
+
+CHAOS_ENV := PAYMENT_TIMEOUT=PT10S PIN_GRACE=PT10S HOLD_LEASE=PT20S RATE_LIMIT_IP_PER_SEC=100000
+
+up-chaos: ## Start the stack with short saga timings for chaos runs (T = grace = 10 s)
+	$(CHAOS_ENV) docker compose up -d --build
+	scripts/check-stack.sh
+
+chaos: ## Chaos scenarios with k6 buyers, 0 violations required (after make up-chaos; RUNS=10 SCENARIOS=a,b)
+	$(CHAOS_ENV) scripts/chaos_run.py --runs $${RUNS:-10} $${SCENARIOS:+--scenarios $$SCENARIOS}
 
 up-fanout: ## Start only the fan-out path (gateway, inventory, order + infra), as CI benchmarks it
 	WS_CONNECT_PER_IP_PER_SEC=100000 docker compose up -d --build gateway inventory order

@@ -66,6 +66,9 @@ class OrderApplicationTest {
     @Autowired
     FakeInventory inventory;
 
+    @Autowired
+    org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private PostgresTestSupport.Seeded event;
 
@@ -221,6 +224,32 @@ class OrderApplicationTest {
         var events = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/events")).build(),
                 HttpResponse.BodyHandlers.ofString());
         assertThat(events.body()).contains("\"eventId\":" + event.eventId());
+    }
+
+    @Test
+    void aPausedRelayKeepsEventsInTheOutboxUntilResumed() throws Exception {
+        URI control = URI.create("http://localhost:" + port + "/internal/outbox-relay");
+        var paused = http.send(HttpRequest.newBuilder(control).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"paused\":true}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(paused.body()).contains("\"paused\":true");
+        try {
+            inventory.holds.put("h10", new FakeInventory.Hold("pat", event.eventId(), "A", List.of(event.seats("A").get(3))));
+            var created = checkout("pat", "h10");
+            String orderId = created.body().replaceAll(".*\"orderId\":(\\d+).*", "$1");
+            Thread.sleep(3000); // three relay intervals
+            assertThat(jdbc.sql("SELECT count(*) FROM outbox WHERE aggregate_id = ? AND published_at IS NULL")
+                    .param(orderId).query(Long.class).single()).isEqualTo(1);
+        } finally {
+            http.send(HttpRequest.newBuilder(control).header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("{\"paused\":false}")).build(),
+                    HttpResponse.BodyHandlers.ofString());
+        }
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (jdbc.sql("SELECT count(*) FROM outbox WHERE published_at IS NULL").query(Long.class).single() > 0) {
+            assertThat(System.currentTimeMillis()).isLessThan(deadline);
+            Thread.sleep(200);
+        }
     }
 
     @Test
