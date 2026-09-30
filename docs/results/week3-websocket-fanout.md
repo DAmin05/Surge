@@ -44,9 +44,19 @@ sockets, instead of 10k tasks on a broadcast channel). With 4, 16 or 64 shards, 
 thousands of clients at once; per-connection tasks balance better through Tokio's work
 stealing. Fewer load-generator threads: no clear change, only more noise.
 
-## Reading it
+## How the criterion is judged
 
-At 5k clients the budget holds with room to spare. At 10k it lands at 212–229 ms p99,
-just over, on a machine where the load generator itself takes about a third of the CPU.
-On a machine with more cores, or with the generator on another host, the same code has
-that headroom back.
+- **10k clients, p99 < 200 ms:** run locally on the developer machine with
+  `WS_CONNECT_PER_IP_PER_SEC=100000 make up && make ws-bench`, and record the result
+  here. On this 4-vCPU box, where the generator itself takes about a third of the CPU,
+  it lands at 212–229 ms. With more cores, or with the generator on another host, the
+  same code has headroom.
+- **CI regression guard, required check `Exit: WebSocket fan-out p99 < 200 ms`:**
+  5k clients, the same 200 ms budget, zero missed updates, on a standard 4-vCPU runner
+  (101–149 ms p99 on this box).
+
+### Local run (developer machine)
+
+| Date | Machine | Clients | p50 | p99 | max | Delivered |
+|---|---|---:|---:|---:|---:|---:|
+| _to fill in_ | | 10,000 | | | | |

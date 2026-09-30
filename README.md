@@ -28,6 +28,8 @@ make up        # build images, start ~25 containers, wait until all are healthy
 make seed      # create an event: 10 sections x 1,000 seats (prints the event id)
 make smoke     # end-to-end: hold race on the cluster, checkout, saga to CONFIRMED, events
 make audit     # run the invariants now
+make ws-bench  # 10k WebSocket clients vs. seat updates (start the stack with
+               #   WS_CONNECT_PER_IP_PER_SEC=100000 so one IP may open 10k sockets)
 make help      # everything else
 ```
 
