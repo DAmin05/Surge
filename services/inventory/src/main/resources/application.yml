@@ -9,6 +9,19 @@ server:
   port: ${PORT:8082}
   shutdown: graceful
 
+surge:
+  inventory:
+    hold-lease: ${HOLD_LEASE:PT5M}
+    payment-timeout: ${PAYMENT_TIMEOUT:PT2M}
+    pin-grace: ${PIN_GRACE:PT30S}
+    max-seats-per-order: 4
+    max-seats-per-user: 4
+    sweep-interval: ${SWEEP_INTERVAL:PT1S}
+    sweep-batch: 200
+    redis-nodes: ${REDIS_NODES:localhost:6379}
+    kafka-bootstrap: ${KAFKA_BOOTSTRAP:}
+    grpc-port: ${GRPC_PORT:9091}
+
 management:
   endpoints:
     web:

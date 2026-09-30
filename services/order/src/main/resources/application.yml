@@ -4,10 +4,23 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/surge}
+    username: ${DB_USER:orders_app}
+    password: ${DB_PASSWORD:orders_app_dev}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      connection-timeout: 5000
 
 server:
   port: ${PORT:8083}
   shutdown: graceful
+
+surge:
+  order:
+    max-seats-per-user: 4
+    inventory-grpc: ${INVENTORY_GRPC:localhost:9091}
+    inventory-deadline: PT2S
 
 management:
   endpoints:

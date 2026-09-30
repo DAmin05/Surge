@@ -6,4 +6,5 @@
   criterion, how CI checks it, ADRs added.
 - JVM versions live only in `gradle/libs.versions.toml`. `libs/contracts` holds generated
   stubs and event DTOs only; no shared business logic between services.
-- Checks: `make test` (Java, Rust, Python), `make up` (stack + health check).
+- Checks: `make test` (Java, Rust, Python), `make up` (stack + health check), `make smoke`
+  (end-to-end against the running stack).

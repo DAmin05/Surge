@@ -9,7 +9,7 @@ help: ## Show targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}'
 
 ## ---------------------------------------------------------------- stack
-.PHONY: keys rotate-keys up check down nuke ps logs
+.PHONY: keys rotate-keys up check down nuke ps logs seed smoke
 # Keys are generated inside the keygen container so they end up owned by the uid the
 # services run as (10001), on Linux as well as on Docker Desktop.
 keys: ## Generate token signing keys into secrets/ (only if absent)
@@ -36,6 +36,14 @@ ps: ## Show service status
 
 logs: ## Follow logs (make logs S=order)
 	docker compose logs -f $(S)
+
+seed: ## Seed an event (SECTIONS=10 ROWS=20 SEATS_PER_ROW=50); prints its id
+	@docker compose exec -T postgres psql -qtA -U orders_owner -d $${POSTGRES_DB:-surge} \
+	  -v sections=$(or $(SECTIONS),10) -v rows=$(or $(ROWS),20) -v seats_per_row=$(or $(SEATS_PER_ROW),50) \
+	  < infra/postgres/seed.sql
+
+smoke: ## End-to-end check against the running stack: hold, race, checkout, events
+	scripts/smoke.sh
 
 ## ---------------------------------------------------------------- build & test
 .PHONY: test test-java test-rust test-python lint images images-multiarch
