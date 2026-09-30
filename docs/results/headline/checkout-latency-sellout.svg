@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" width="720" height="300" role="img" aria-label="Checkout latency at the gateway (no faults)">
+
+<style>
+  .bg { fill: #fcfcfb } .grid { stroke: #e1e0d9 } .axis { fill: #898781 }
+  .ink { fill: #0b0b0b } .ink2 { fill: #52514e } .band { fill: rgba(208,59,59,.10) }
+  .s1 { stroke: #2a78d6 } .s2 { stroke: #eb6834 } .s3 { stroke: #1baf7a } .s4 { stroke: #eda100 }
+  .f1 { fill: #2a78d6 } .f2 { fill: #eb6834 } .f3 { fill: #1baf7a } .f4 { fill: #eda100 }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #1a1a19 } .grid { stroke: #2c2c2a } .axis { fill: #898781 }
+    .ink { fill: #ffffff } .ink2 { fill: #c3c2b7 } .band { fill: rgba(208,59,59,.18) }
+    .s1 { stroke: #3987e5 } .s2 { stroke: #d95926 } .s3 { stroke: #199e70 } .s4 { stroke: #c98500 }
+    .f1 { fill: #3987e5 } .f2 { fill: #d95926 } .f3 { fill: #199e70 } .f4 { fill: #c98500 }
+  }
+</style>
+<rect class="bg" width="720" height="300" rx="10"/>
+<text class="ink" x="60" y="24" font-size="15" font-weight="600">Checkout latency at the gateway (no faults)</text>
+<line class="grid" x1="60" x2="545" y1="260.0" y2="260.0"/>
+<text class="axis" x="52" y="264.0" font-size="11" text-anchor="end">0.0</text>
+<line class="grid" x1="60" x2="545" y1="209.5" y2="209.5"/>
+<text class="axis" x="52" y="213.5" font-size="11" text-anchor="end">500</text>
+<line class="grid" x1="60" x2="545" y1="159.0" y2="159.0"/>
+<text class="axis" x="52" y="163.0" font-size="11" text-anchor="end">1,000</text>
+<line class="grid" x1="60" x2="545" y1="108.5" y2="108.5"/>
+<text class="axis" x="52" y="112.5" font-size="11" text-anchor="end">1,500</text>
+<line class="grid" x1="60" x2="545" y1="58.0" y2="58.0"/>
+<text class="axis" x="52" y="62.0" font-size="11" text-anchor="end">2,000</text>
+<text class="axis" x="60.0" y="282" font-size="11" text-anchor="middle">0</text>
+<text class="axis" x="167.8" y="282" font-size="11" text-anchor="middle">40</text>
+<text class="axis" x="275.6" y="282" font-size="11" text-anchor="middle">80</text>
+<text class="axis" x="383.3" y="282" font-size="11" text-anchor="middle">120</text>
+<text class="axis" x="491.1" y="282" font-size="11" text-anchor="middle">160</text>
+<text class="axis" x="302.5" y="296" font-size="11" text-anchor="middle">seconds since the sale opened</text>
+<text class="axis" x="14" y="159.0" font-size="11" text-anchor="middle" transform="rotate(-90 14 159.0)">ms</text>
+<path class="s1" d="M60.0,258.2 L73.5,257.5 L86.9,258.1 L100.4,257.7 L113.9,255.1 L127.4,251.5 L140.8,248.6 L154.3,246.2 L167.8,252.0 L181.3,255.7 L194.7,254.8 L208.2,251.8 L221.7,253.1 L235.1,252.1 L248.6,251.1 L262.1,255.1 L275.6,252.9 L289.0,238.6 L302.5,241.4 L316.0,247.3 L329.4,244.7 L342.9,245.3 L356.4,237.8 L369.9,238.8 L383.3,243.3 L396.8,249.4 L410.3,250.9 L423.8,250.2 L437.2,252.8 L450.7,256.5 L464.2,256.8 L477.6,256.7 L491.1,257.1 L504.6,257.3 L518.1,257.7 L531.5,258.0 L545.0,258.3" fill="none" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="60.0" cy="258.2" r="6" fill="transparent"><title>p50: 18 ms at 0 s</title></circle>
+<circle cx="73.5" cy="257.5" r="6" fill="transparent"><title>p50: 25 ms at 5 s</title></circle>
+<circle cx="86.9" cy="258.1" r="6" fill="transparent"><title>p50: 19 ms at 10 s</title></circle>
+<circle cx="100.4" cy="257.7" r="6" fill="transparent"><title>p50: 23 ms at 15 s</title></circle>
+<circle cx="113.9" cy="255.1" r="6" fill="transparent"><title>p50: 48 ms at 20 s</title></circle>
+<circle cx="127.4" cy="251.5" r="6" fill="transparent"><title>p50: 84 ms at 25 s</title></circle>
+<circle cx="140.8" cy="248.6" r="6" fill="transparent"><title>p50: 113 ms at 30 s</title></circle>
+<circle cx="154.3" cy="246.2" r="6" fill="transparent"><title>p50: 137 ms at 35 s</title></circle>
+<circle cx="167.8" cy="252.0" r="6" fill="transparent"><title>p50: 79 ms at 40 s</title></circle>
+<circle cx="181.3" cy="255.7" r="6" fill="transparent"><title>p50: 43 ms at 45 s</title></circle>
+<circle cx="194.7" cy="254.8" r="6" fill="transparent"><title>p50: 51 ms at 50 s</title></circle>
+<circle cx="208.2" cy="251.8" r="6" fill="transparent"><title>p50: 82 ms at 55 s</title></circle>
+<circle cx="221.7" cy="253.1" r="6" fill="transparent"><title>p50: 68 ms at 60 s</title></circle>
+<circle cx="235.1" cy="252.1" r="6" fill="transparent"><title>p50: 78 ms at 65 s</title></circle>
+<circle cx="248.6" cy="251.1" r="6" fill="transparent"><title>p50: 88 ms at 70 s</title></circle>
+<circle cx="262.1" cy="255.1" r="6" fill="transparent"><title>p50: 48 ms at 75 s</title></circle>
+<circle cx="275.6" cy="252.9" r="6" fill="transparent"><title>p50: 71 ms at 80 s</title></circle>
+<circle cx="289.0" cy="238.6" r="6" fill="transparent"><title>p50: 212 ms at 85 s</title></circle>
+<circle cx="302.5" cy="241.4" r="6" fill="transparent"><title>p50: 184 ms at 90 s</title></circle>
+<circle cx="316.0" cy="247.3" r="6" fill="transparent"><title>p50: 126 ms at 95 s</title></circle>
+<circle cx="329.4" cy="244.7" r="6" fill="transparent"><title>p50: 152 ms at 100 s</title></circle>
+<circle cx="342.9" cy="245.3" r="6" fill="transparent"><title>p50: 146 ms at 105 s</title></circle>
+<circle cx="356.4" cy="237.8" r="6" fill="transparent"><title>p50: 220 ms at 110 s</title></circle>
+<circle cx="369.9" cy="238.8" r="6" fill="transparent"><title>p50: 210 ms at 115 s</title></circle>
+<circle cx="383.3" cy="243.3" r="6" fill="transparent"><title>p50: 166 ms at 120 s</title></circle>
+<circle cx="396.8" cy="249.4" r="6" fill="transparent"><title>p50: 105 ms at 125 s</title></circle>
+<circle cx="410.3" cy="250.9" r="6" fill="transparent"><title>p50: 91 ms at 130 s</title></circle>
+<circle cx="423.8" cy="250.2" r="6" fill="transparent"><title>p50: 97 ms at 135 s</title></circle>
+<circle cx="437.2" cy="252.8" r="6" fill="transparent"><title>p50: 71 ms at 140 s</title></circle>
+<circle cx="450.7" cy="256.5" r="6" fill="transparent"><title>p50: 35 ms at 145 s</title></circle>
+<circle cx="464.2" cy="256.8" r="6" fill="transparent"><title>p50: 32 ms at 150 s</title></circle>
+<circle cx="477.6" cy="256.7" r="6" fill="transparent"><title>p50: 33 ms at 155 s</title></circle>
+<circle cx="491.1" cy="257.1" r="6" fill="transparent"><title>p50: 29 ms at 160 s</title></circle>
+<circle cx="504.6" cy="257.3" r="6" fill="transparent"><title>p50: 27 ms at 165 s</title></circle>
+<circle cx="518.1" cy="257.7" r="6" fill="transparent"><title>p50: 23 ms at 170 s</title></circle>
+<circle cx="531.5" cy="258.0" r="6" fill="transparent"><title>p50: 20 ms at 175 s</title></circle>
+<circle cx="545.0" cy="258.3" r="6" fill="transparent"><title>p50: 17 ms at 180 s</title></circle>
+<path class="s2" d="M60.0,255.1 L73.5,255.0 L86.9,246.6 L100.4,223.4 L113.9,211.9 L127.4,210.6 L140.8,179.1 L154.3,159.8 L167.8,162.0 L181.3,214.6 L194.7,210.0 L208.2,209.9 L221.7,211.9 L235.1,209.8 L248.6,209.0 L262.1,212.1 L275.6,172.9 L289.0,164.2 L302.5,165.3 L316.0,174.9 L329.4,180.2 L342.9,165.3 L356.4,162.9 L369.9,163.8 L383.3,110.5 L396.8,109.8 L410.3,210.9 L423.8,211.6 L437.2,212.2 L450.7,240.6 L464.2,221.4 L477.6,220.5 L491.1,241.4 L504.6,243.5 L518.1,244.1 L531.5,242.0 L545.0,255.1" fill="none" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="60.0" cy="255.1" r="6" fill="transparent"><title>p99: 48 ms at 0 s</title></circle>
+<circle cx="73.5" cy="255.0" r="6" fill="transparent"><title>p99: 50 ms at 5 s</title></circle>
+<circle cx="86.9" cy="246.6" r="6" fill="transparent"><title>p99: 133 ms at 10 s</title></circle>
+<circle cx="100.4" cy="223.4" r="6" fill="transparent"><title>p99: 362 ms at 15 s</title></circle>
+<circle cx="113.9" cy="211.9" r="6" fill="transparent"><title>p99: 476 ms at 20 s</title></circle>
+<circle cx="127.4" cy="210.6" r="6" fill="transparent"><title>p99: 490 ms at 25 s</title></circle>
+<circle cx="140.8" cy="179.1" r="6" fill="transparent"><title>p99: 801 ms at 30 s</title></circle>
+<circle cx="154.3" cy="159.8" r="6" fill="transparent"><title>p99: 992 ms at 35 s</title></circle>
+<circle cx="167.8" cy="162.0" r="6" fill="transparent"><title>p99: 970 ms at 40 s</title></circle>
+<circle cx="181.3" cy="214.6" r="6" fill="transparent"><title>p99: 449 ms at 45 s</title></circle>
+<circle cx="194.7" cy="210.0" r="6" fill="transparent"><title>p99: 495 ms at 50 s</title></circle>
+<circle cx="208.2" cy="209.9" r="6" fill="transparent"><title>p99: 496 ms at 55 s</title></circle>
+<circle cx="221.7" cy="211.9" r="6" fill="transparent"><title>p99: 476 ms at 60 s</title></circle>
+<circle cx="235.1" cy="209.8" r="6" fill="transparent"><title>p99: 497 ms at 65 s</title></circle>
+<circle cx="248.6" cy="209.0" r="6" fill="transparent"><title>p99: 505 ms at 70 s</title></circle>
+<circle cx="262.1" cy="212.1" r="6" fill="transparent"><title>p99: 474 ms at 75 s</title></circle>
+<circle cx="275.6" cy="172.9" r="6" fill="transparent"><title>p99: 862 ms at 80 s</title></circle>
+<circle cx="289.0" cy="164.2" r="6" fill="transparent"><title>p99: 948 ms at 85 s</title></circle>
+<circle cx="302.5" cy="165.3" r="6" fill="transparent"><title>p99: 938 ms at 90 s</title></circle>
+<circle cx="316.0" cy="174.9" r="6" fill="transparent"><title>p99: 842 ms at 95 s</title></circle>
+<circle cx="329.4" cy="180.2" r="6" fill="transparent"><title>p99: 790 ms at 100 s</title></circle>
+<circle cx="342.9" cy="165.3" r="6" fill="transparent"><title>p99: 937 ms at 105 s</title></circle>
+<circle cx="356.4" cy="162.9" r="6" fill="transparent"><title>p99: 961 ms at 110 s</title></circle>
+<circle cx="369.9" cy="163.8" r="6" fill="transparent"><title>p99: 953 ms at 115 s</title></circle>
+<circle cx="383.3" cy="110.5" r="6" fill="transparent"><title>p99: 1,480 ms at 120 s</title></circle>
+<circle cx="396.8" cy="109.8" r="6" fill="transparent"><title>p99: 1,487 ms at 125 s</title></circle>
+<circle cx="410.3" cy="210.9" r="6" fill="transparent"><title>p99: 486 ms at 130 s</title></circle>
+<circle cx="423.8" cy="211.6" r="6" fill="transparent"><title>p99: 479 ms at 135 s</title></circle>
+<circle cx="437.2" cy="212.2" r="6" fill="transparent"><title>p99: 473 ms at 140 s</title></circle>
+<circle cx="450.7" cy="240.6" r="6" fill="transparent"><title>p99: 192 ms at 145 s</title></circle>
+<circle cx="464.2" cy="221.4" r="6" fill="transparent"><title>p99: 383 ms at 150 s</title></circle>
+<circle cx="477.6" cy="220.5" r="6" fill="transparent"><title>p99: 391 ms at 155 s</title></circle>
+<circle cx="491.1" cy="241.4" r="6" fill="transparent"><title>p99: 184 ms at 160 s</title></circle>
+<circle cx="504.6" cy="243.5" r="6" fill="transparent"><title>p99: 164 ms at 165 s</title></circle>
+<circle cx="518.1" cy="244.1" r="6" fill="transparent"><title>p99: 158 ms at 170 s</title></circle>
+<circle cx="531.5" cy="242.0" r="6" fill="transparent"><title>p99: 178 ms at 175 s</title></circle>
+<circle cx="545.0" cy="255.1" r="6" fill="transparent"><title>p99: 49 ms at 180 s</title></circle>
+<circle class="f2" cx="545.0" cy="255.1" r="3"/>
+<text class="ink2" x="553" y="259.1" font-size="11">49 p99</text>
+<circle class="f1" cx="545.0" cy="269.1" r="3"/>
+<text class="ink2" x="553" y="273.1" font-size="11">17 p50</text>
+<rect class="f1" x="60.0" y="38" width="14" height="3" rx="1.5"/>
+<text class="ink2" x="78.0" y="43" font-size="11">p50</text>
+<rect class="f2" x="110.6" y="38" width="14" height="3" rx="1.5"/>
+<text class="ink2" x="128.6" y="43" font-size="11">p99</text>
+</svg>
