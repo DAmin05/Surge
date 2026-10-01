@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { WarRoom } from "@/lib/warroom";
 import { LineChart } from "./LineChart";
+import { Icon, type IconName } from "./Icon";
 
 const REFRESH_MS = 5000;
 const count = (v: number | null) => (v == null ? "—" : Math.round(v).toLocaleString());
@@ -38,22 +40,29 @@ export function WarRoomView() {
 
   return (
     <div className="stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="page-head">
         <div>
+          <div className="eyebrow">Operations</div>
           <h1>War room</h1>
-          <p className="secondary" style={{ margin: "4px 0 0" }}>
-            Refreshes every 5 s. Shaded bands are chaos actions.
+          <p>
+            The sale as the system sees it, refreshed every 5 s. Shaded bands mark chaos actions; the number that
+            matters is the one top left.
           </p>
         </div>
-        <div className="row" role="group" aria-label="Time range">
+        <div className="segmented" role="group" aria-label="Time range">
           {[5, 10, 30].map((m) => (
-            <button key={m} className={m === minutes ? "" : "ghost"} onClick={() => setMinutes(m)}>
+            <button key={m} aria-pressed={m === minutes} onClick={() => setMinutes(m)}>
               {m} min
             </button>
           ))}
         </div>
       </div>
-      {error && <p className="error">Metrics unavailable: {error}</p>}
+      {error && (
+        <div className="alert" role="alert">
+          <Icon name="alert" />
+          Metrics unavailable: {error}
+        </div>
+      )}
       {data && data.errors.length > 0 && (
         <p className="muted" style={{ fontSize: 13 }}>
           Partial data: {data.errors.length} quer{data.errors.length === 1 ? "y" : "ies"} failed.
@@ -66,10 +75,10 @@ export function WarRoomView() {
             <Saga saga={data.saga} />
           </div>
           <div className="kpis">
-            <Kpi label="Live WebSocket clients" value={count(data.kpis.wsConnections)} />
-            <Kpi label="In the waiting room" value={count(data.kpis.queueDepth)} />
-            <Kpi label="Orders confirmed" value={count(data.kpis.confirmed)} />
-            <Kpi label="Holds expired while reserved" value={count(data.kpis.expiredWhileReserved)} />
+            <Kpi icon="radio" label="Live WebSocket clients" value={count(data.kpis.wsConnections)} hint="Browsers watching a seat map" />
+            <Kpi icon="users" label="In the waiting room" value={count(data.kpis.queueDepth)} hint="Buyers queued for admission" />
+            <Kpi icon="ticket" label="Orders confirmed" value={count(data.kpis.confirmed)} hint="Paid and ticketed" />
+            <Kpi icon="clock" label="Holds expired while reserved" value={count(data.kpis.expiredWhileReserved)} hint="Postgres still decided these seats" />
           </div>
           <div className="charts">
             <LineChart
@@ -109,16 +118,27 @@ export function WarRoomView() {
           </div>
         </>
       )}
-      {!data && !error && <p className="muted">Loading…</p>}
+      {!data && !error && (
+        <div className="grid-2" aria-busy>
+          <div className="skeleton shimmer" style={{ height: 300 }} />
+          <div className="skeleton shimmer" style={{ height: 300 }} />
+        </div>
+      )}
     </div>
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({ icon, label, value, hint }: { icon: IconName; label: string; value: string; hint: string }) {
   return (
     <div className="card kpi">
-      <span className="label">{label}</span>
+      <div className="head">
+        <span className="icon">
+          <Icon name={icon} />
+        </span>
+        <span className="label">{label}</span>
+      </div>
       <span className="value num">{value}</span>
+      <span className="hint">{hint}</span>
     </div>
   );
 }
@@ -130,7 +150,7 @@ function Violations({ data }: { data: WarRoom }) {
   const known = data.violations != null;
   const ok = known && total === 0;
   return (
-    <section className="card stack" data-testid="violations" data-total={known ? total : ""}>
+    <section className={`card stack verdict ${known ? (ok ? "ok" : "bad") : ""}`} data-testid="violations" data-total={known ? total : ""}>
       <div className={`hero ${known ? (ok ? "ok" : "bad") : ""}`}>
         <span className="value num">{known ? total : "—"}</span>
         <div>
@@ -149,8 +169,18 @@ function Violations({ data }: { data: WarRoom }) {
           <tbody>
             {rows.map(([name, v]) => (
               <tr key={name}>
-                <td>{name}</td>
-                <td className="num">{v}</td>
+                <td>
+                  <span className="mono">{name}</span>
+                </td>
+                <td className={`num ${v === 0 ? "inv-ok" : "inv-bad"}`}>
+                  {v === 0 ? (
+                    <span className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
+                      <Icon name="check" size={14} /> 0
+                    </span>
+                  ) : (
+                    v
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -188,14 +218,9 @@ function Saga({ saga }: { saga: WarRoom["saga"] }) {
   let acc = 0;
   return (
     <section className="card stack">
-      <h2>Orders by saga state</h2>
-      <div className="row" style={{ gap: 14, fontSize: 13 }} aria-label="Legend">
-        {parts.map((p) => (
-          <span key={p.key} className="row secondary" style={{ gap: 6 }}>
-            <span className="status-dot" style={{ background: p.color, borderRadius: 3 }} />
-            {p.label} <strong className="num">{p.v.toLocaleString()}</strong>
-          </span>
-        ))}
+      <div className="card-head">
+        <h2>Orders by saga state</h2>
+        <span className="pill num">{total.toLocaleString()} total</span>
       </div>
       <svg viewBox="0 0 400 36" width="100%" role="img" aria-label="Orders by saga state" style={{ display: "block" }}>
         {total === 0 ? (
@@ -222,6 +247,29 @@ function Saga({ saga }: { saga: WarRoom["saga"] }) {
             })
         )}
       </svg>
+      <table className="data" aria-label="Orders by saga state">
+        <tbody>
+          {parts.map((p) => (
+            <tr key={p.key} onPointerEnter={() => setHover(p.key)} onPointerLeave={() => setHover(null)}>
+              <td>
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="status-dot" style={{ background: p.color, borderRadius: 3 }} />
+                  {p.label}
+                </span>
+              </td>
+              <td className="num secondary" style={{ textAlign: "right" }}>
+                {total ? `${((p.v / total) * 100).toFixed(p.v / total < 0.1 && p.v > 0 ? 1 : 0)}%` : "—"}
+              </td>
+              <td className="num" style={{ width: 72 }}>
+                <strong>{p.v.toLocaleString()}</strong>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small" style={{ marginTop: "auto" }}>
+        In flight and compensating orders settle on their own; the reconciler flags any that get stuck.
+      </p>
     </section>
   );
 }
@@ -232,17 +280,29 @@ function ChaosLog({ data }: { data: WarRoom }) {
     <section className="card stack">
       <h2>Chaos in this window</h2>
       {data.chaos.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          None. Break something from the Chaos page.
-        </p>
+        <div className="empty" style={{ flex: 1, justifyContent: "center" }}>
+          <Icon name="flame" size={24} />
+          <span>
+            Nothing broken yet. <Link href="/chaos">Break something</Link> and watch the invariants hold.
+          </span>
+        </div>
       ) : (
         <table className="data">
           <tbody>
             {[...data.chaos].reverse().map((c, i) => (
               <tr key={i}>
                 <td>{c.name}</td>
-                <td className="num">{t(c.startedAt)}</td>
-                <td className="num">{c.endedAt ? t(c.endedAt) : "active"}</td>
+                <td className="num secondary">{t(c.startedAt)}</td>
+                <td className="num">
+                  {c.endedAt ? (
+                    <span className="secondary">{t(c.endedAt)}</span>
+                  ) : (
+                    <span className="pill bad">
+                      <span className="status-dot pulse" style={{ background: "var(--critical)", color: "var(--critical)" }} />
+                      active
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

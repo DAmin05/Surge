@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, money, type Catalog, type Hold, type OrderView } from "@/lib/api";
 import { useSeatMap } from "@/lib/useSeatMap";
 import { SeatMapView } from "./SeatMapView";
-import { Countdown } from "./Countdown";
+import { HoldTimer } from "./Countdown";
+import { Icon } from "./Icon";
 
 const MAX_SEATS = 4;
 const TERMINAL = new Set(["CONFIRMED", "CANCELLED", "FAILED"]);
@@ -13,8 +14,8 @@ const TERMINAL = new Set(["CONFIRMED", "CANCELLED", "FAILED"]);
 type Stage =
   | { kind: "queue"; position?: number; wait?: number }
   | { kind: "pick" }
-  | { kind: "held"; hold: Hold; section: string; seats: number[] }
-  | { kind: "paying"; hold: Hold; section: string; seats: number[] }
+  | { kind: "held"; hold: Hold; heldAt: number; section: string; seats: number[] }
+  | { kind: "paying"; hold: Hold; heldAt: number; section: string; seats: number[] }
   | { kind: "order"; order: OrderView };
 
 const MESSAGES: Record<string, string> = {
@@ -29,6 +30,14 @@ const message = (e: unknown) =>
   e instanceof ApiError ? (MESSAGES[e.code] ?? `Something went wrong (${e.code}).`) : "Network error. Try again.";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const STEPS = [
+  { key: "queue", label: "Waiting room" },
+  { key: "pick", label: "Choose seats" },
+  { key: "held", label: "Pay" },
+  { key: "order", label: "Tickets" },
+];
+const stepIndex = (kind: Stage["kind"]) => (kind === "paying" ? 2 : STEPS.findIndex((s) => s.key === kind));
 
 /**
  * Waiting room → pick seats → hold (with countdown) → checkout → order outcome.
@@ -109,7 +118,7 @@ export function BuyerFlow({ eventId }: { eventId: number }) {
         }
       }
       setSelected(new Set());
-      setStage({ kind: "held", hold: h, section, seats });
+      setStage({ kind: "held", hold: h, heldAt: Date.now(), section, seats });
     } catch (e) {
       setError(message(e));
     } finally {
@@ -161,130 +170,303 @@ export function BuyerFlow({ eventId }: { eventId: number }) {
     }
   };
 
-  if (error && !catalog) return <p className="error">{error}</p>;
-  if (!catalog) return <p className="muted">Loading…</p>;
+  if (error && !catalog)
+    return (
+      <div className="alert" role="alert">
+        <Icon name="alert" />
+        {error}
+      </div>
+    );
+  if (!catalog)
+    return (
+      <div className="stack" aria-busy>
+        <div className="skeleton shimmer" style={{ height: 64 }} />
+        <div className="buy-layout">
+          <div className="skeleton shimmer" style={{ height: 420 }} />
+          <div className="skeleton shimmer" style={{ height: 260 }} />
+        </div>
+      </div>
+    );
 
   const held = stage.kind === "held" || stage.kind === "paying" ? stage : null;
   const mine = new Set(held?.seats ?? []);
-  const price = catalog.sections.find((s) => s.section === section)?.priceCents ?? 0;
+  const priceOf = (s: string) => catalog.sections.find((x) => x.section === s)?.priceCents ?? 0;
+  const seatOf = (s: string, id: number) => catalog.sections.find((x) => x.section === s)?.seats.find((x) => x.id === id);
+  const starts = new Date(catalog.startsAt);
+  const current = stepIndex(stage.kind);
 
   return (
-    <div className="stack">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <div>
-          <h1>{catalog.name}</h1>
-          <p className="secondary" style={{ margin: "4px 0 0" }}>
-            {new Date(catalog.startsAt).toLocaleString()}
-          </p>
+    <div className="stack-lg">
+      <div className="stack">
+        <Link href="/" className="back">
+          <Icon name="arrowLeft" size={14} /> All events
+        </Link>
+        <div className="event-head">
+          <div className="title">
+            <div className="date-block" aria-hidden>
+              <div className="m">{starts.toLocaleString(undefined, { month: "short" })}</div>
+              <div className="d num">{starts.getDate()}</div>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <h1>{catalog.name}</h1>
+              <p className="secondary small" style={{ marginTop: 4 }}>
+                {starts.toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                {" · "}
+                <span className="num">{catalog.capacity.toLocaleString()}</span> seats
+              </p>
+            </div>
+          </div>
+          <span className={`pill ${connected ? "good" : "warn"}`} data-testid="live" data-connected={connected}>
+            <span
+              className={`status-dot ${connected ? "pulse" : ""}`}
+              style={{ background: connected ? "var(--good)" : "var(--warning)", color: "var(--good)" }}
+            />
+            {connected ? "Live seat map" : "Reconnecting…"}
+          </span>
         </div>
-        <span className="pill" data-testid="live" data-connected={connected}>
-          <span className="status-dot" style={{ background: connected ? "var(--good)" : "var(--critical)" }} />
-          {connected ? "Live" : "Reconnecting"}
-        </span>
+        <ol className="steps" aria-label="Progress">
+          {STEPS.map((s, i) => (
+            <li key={s.key} data-state={i < current ? "done" : i === current ? "current" : "todo"} aria-current={i === current ? "step" : undefined}>
+              <span className="bar" />
+              {s.label}
+            </li>
+          ))}
+        </ol>
       </div>
 
-      <section className="card stack" aria-live="polite" data-testid="stage" data-stage={stage.kind}>
-        {stage.kind === "queue" && (
-          <div>
-            <h2>You’re in the waiting room</h2>
-            <p className="secondary" style={{ marginBottom: 0 }}>
-              {stage.position === undefined ? (
-                "Joining…"
-              ) : (
-                <>
-                  Position <span className="num">{stage.position.toLocaleString()}</span> · about{" "}
-                  <span className="num">{stage.wait}</span>s. The map below is live; you can pick seats once
-                  you’re in.
-                </>
-              )}
-            </p>
-          </div>
-        )}
-        {stage.kind === "pick" && (
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div>
-              <h2>Pick up to four seats in one section</h2>
-              <p className="secondary" style={{ margin: "4px 0 0" }}>
-                <span className="num">{selected.size}</span> selected · {money(price * selected.size)}
-              </p>
-            </div>
-            <button data-testid="hold" disabled={busy || selected.size === 0} onClick={hold}>
-              Hold seats
-            </button>
-          </div>
-        )}
-        {held && (
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div>
-              <h2>
-                {held.seats.length} seat{held.seats.length > 1 ? "s" : ""} held in {held.section}
-              </h2>
-              <p className="secondary" style={{ margin: "4px 0 0" }}>
-                {money((catalog.sections.find((s) => s.section === held.section)?.priceCents ?? 0) * held.seats.length)}{" "}
-                · pay within{" "}
-                {stage.kind === "held" ? <Countdown untilMs={held.hold.expiresAtMs} onExpire={expired} /> : "—"}
-              </p>
-            </div>
-            <div className="row">
-              <button className="ghost" disabled={busy || stage.kind === "paying"} onClick={release}>
-                Release
-              </button>
-              <button data-testid="pay" disabled={busy || stage.kind === "paying"} onClick={pay}>
-                {stage.kind === "paying" ? "Paying…" : "Pay"}
-              </button>
-            </div>
-          </div>
-        )}
-        {stage.kind === "order" && <OrderResult order={stage.order} />}
-        {error && (
-          <p className="error" role="alert" data-testid="error" style={{ margin: 0 }}>
-            {error}
-          </p>
-        )}
-      </section>
+      <div className="buy-layout">
+        <section className="card" aria-label="Seat map">
+          <SeatMapView
+            sections={catalog.sections}
+            active={held?.section ?? section}
+            onSection={onSection}
+            map={map}
+            version={version}
+            selected={selected}
+            mine={mine}
+            interactive={stage.kind === "pick" && !busy}
+            onToggle={onToggle}
+          />
+        </section>
 
-      <section className="card">
-        <SeatMapView
-          sections={catalog.sections}
-          active={held?.section ?? section}
-          onSection={onSection}
-          map={map}
-          version={version}
-          selected={selected}
-          mine={mine}
-          interactive={stage.kind === "pick" && !busy}
-          onToggle={onToggle}
-        />
-      </section>
+        <aside className="buy-aside">
+          <section className="card stack summary" aria-live="polite" data-testid="stage" data-stage={stage.kind}>
+            {stage.kind === "queue" && <Queue position={stage.position} wait={stage.wait} />}
+
+            {stage.kind === "pick" && (
+              <>
+                <div className="card-head">
+                  <h2>Your seats</h2>
+                  <span className="pill accent num">
+                    {selected.size} / {MAX_SEATS}
+                  </span>
+                </div>
+                {selected.size === 0 ? (
+                  <div className="stack" style={{ gap: 10 }}>
+                    <div className="placeholder-seats" aria-hidden>
+                      {Array.from({ length: MAX_SEATS }, (_, i) => (
+                        <span key={i} />
+                      ))}
+                    </div>
+                    <p className="secondary small">Pick up to four seats in one section on the map.</p>
+                  </div>
+                ) : (
+                  <SeatLines
+                    section={section}
+                    seats={[...selected].sort((a, b) => a - b)}
+                    seatOf={seatOf}
+                    price={priceOf(section)}
+                  />
+                )}
+                <div className="total">
+                  <span>Total</span>
+                  <span className="num">{money(priceOf(section) * selected.size)}</span>
+                </div>
+                <button className="lg block" data-testid="hold" disabled={busy || selected.size === 0} onClick={hold}>
+                  {busy ? <Icon name="spinner" className="spin" /> : <Icon name="ticket" />}
+                  {busy ? "Holding…" : selected.size === 0 ? "Select seats to continue" : `Hold ${selected.size} seat${selected.size > 1 ? "s" : ""}`}
+                </button>
+                <p className="muted small" style={{ textAlign: "center" }}>
+                  Holding reserves them for you while you pay.
+                </p>
+              </>
+            )}
+
+            {held && (
+              <>
+                <div className="card-head">
+                  <h2>
+                    {held.seats.length} seat{held.seats.length > 1 ? "s" : ""} held for you
+                  </h2>
+                  <span className="pill accent">Section {held.section}</span>
+                </div>
+                {stage.kind === "held" ? (
+                  <HoldTimer fromMs={held.heldAt} untilMs={held.hold.expiresAtMs} onExpire={expired} />
+                ) : (
+                  <div className="timer">
+                    <Icon name="spinner" size={40} className="spin" />
+                    <div>
+                      <div style={{ fontWeight: 650 }}>Processing payment…</div>
+                      <div className="small muted">Confirming your seats. Don’t close this page.</div>
+                    </div>
+                  </div>
+                )}
+                <SeatLines section={held.section} seats={held.seats} seatOf={seatOf} price={priceOf(held.section)} />
+                <div className="total">
+                  <span>Total</span>
+                  <span className="num">{money(priceOf(held.section) * held.seats.length)}</span>
+                </div>
+                <button className="lg block" data-testid="pay" disabled={busy || stage.kind === "paying"} onClick={pay}>
+                  {stage.kind === "paying" ? <Icon name="spinner" className="spin" /> : <Icon name="card" />}
+                  {stage.kind === "paying" ? "Paying…" : `Pay ${money(priceOf(held.section) * held.seats.length)}`}
+                </button>
+                <button className="ghost block" disabled={busy || stage.kind === "paying"} onClick={release}>
+                  Release seats
+                </button>
+              </>
+            )}
+
+            {stage.kind === "order" && <OrderResult order={stage.order} name={catalog.name} starts={starts} />}
+
+            {error && (
+              <div className="alert" role="alert" data-testid="error">
+                <Icon name="alert" />
+                <span>{error}</span>
+              </div>
+            )}
+          </section>
+          <div className="callout small">
+            <Icon name="shield" size={18} />
+            <span style={{ flex: 1 }}>Every seat is checked against the database at checkout, so no seat is ever sold twice.</span>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
 
-function OrderResult({ order }: { order: OrderView }) {
+function Queue({ position, wait }: { position?: number; wait?: number }) {
+  return (
+    <div className="queue-hero">
+      <span className="pill accent">
+        <Icon name="users" size={14} /> Waiting room
+      </span>
+      {position === undefined ? (
+        <>
+          <div className="queue-pos" aria-hidden>
+            …
+          </div>
+          <p className="secondary">Getting you a place in line.</p>
+        </>
+      ) : (
+        <>
+          <div className="small muted">You’re number</div>
+          <div className="queue-pos num">{position.toLocaleString()}</div>
+          <p className="secondary small">
+            in line · about <span className="num">{wait}</span> s to go
+          </p>
+        </>
+      )}
+      <div className="queue-track" aria-hidden>
+        <span />
+      </div>
+      <p className="muted small">Keep this page open. The seat map is live, and you can pick seats as soon as you’re in.</p>
+    </div>
+  );
+}
+
+function SeatLines({
+  section,
+  seats,
+  seatOf,
+  price,
+}: {
+  section: string;
+  seats: number[];
+  seatOf: (section: string, id: number) => { row: string; number: number } | undefined;
+  price: number;
+}) {
+  return (
+    <ul className="line-items">
+      {seats.map((id) => {
+        const s = seatOf(section, id);
+        return (
+          <li key={id}>
+            <span className="seat-chip">
+              <span className="sw" aria-hidden />
+              {s ? `Section ${section} · Row ${s.row} · Seat ${s.number}` : `Seat ${id}`}
+            </span>
+            <span className="num">{money(price)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function OrderResult({ order, name, starts }: { order: OrderView; name: string; starts: Date }) {
   if (order.state === "CONFIRMED") {
     return (
-      <div data-testid="order" data-state={order.state}>
-        <h2>You’re going. Order #{order.orderId} confirmed.</h2>
-        <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-          {order.seats.map((s) => (
-            <li key={s.seatId}>
-              {s.section}, row {s.row}, seat {s.number} · {money(s.unitPriceCents)}
-              {s.issued ? "" : " · ticket issuing"}
-            </li>
-          ))}
-        </ul>
-        <p className="secondary">
-          Total {money(order.amountCents)} · <Link href="/">Back to events</Link>
-        </p>
+      <div className="stack" data-testid="order" data-state={order.state}>
+        <div className="row" style={{ gap: 10 }}>
+          <span className="fact-icon" style={{ color: "var(--good)" }}>
+            <Icon name="check" />
+          </span>
+          <div>
+            <h2>You’re going!</h2>
+            <p className="secondary small">Order #{order.orderId} confirmed.</p>
+          </div>
+        </div>
+        <div className="ticket">
+          <div className="top">
+            <span className="k">Admit {order.seats.length}</span>
+            <strong style={{ fontSize: 17 }}>{name}</strong>
+            <span style={{ fontSize: 13, opacity: 0.9 }}>
+              {starts.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+            </span>
+          </div>
+          <div className="perf" />
+          <div className="seats">
+            <span className="h">Section</span>
+            <span className="h">Row</span>
+            <span className="h">Seat</span>
+            {order.seats.map((s) => (
+              <span key={s.seatId} style={{ display: "contents" }}>
+                <span>{s.section}</span>
+                <span>{s.row}</span>
+                <span>
+                  {s.number}
+                  {s.issued ? "" : " · issuing"}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="total">
+          <span>Paid</span>
+          <span className="num">{money(order.amountCents)}</span>
+        </div>
+        <Link href="/" className="small">
+          Back to events
+        </Link>
       </div>
     );
   }
   return (
-    <div data-testid="order" data-state={order.state}>
-      <h2>Payment didn’t go through</h2>
-      <p className="secondary" style={{ marginBottom: 0 }}>
-        Order #{order.orderId} is {order.state.toLowerCase()}; your seats went back on sale. If you were charged, it’s refunded automatically.
+    <div className="stack" data-testid="order" data-state={order.state}>
+      <div className="row" style={{ gap: 10 }}>
+        <span className="fact-icon" style={{ color: "var(--critical)" }}>
+          <Icon name="alert" />
+        </span>
+        <h2>Payment didn’t go through</h2>
+      </div>
+      <p className="secondary small">
+        Order #{order.orderId} is {order.state.toLowerCase()}; your seats went back on sale. If you were charged, it’s
+        refunded automatically.
       </p>
+      <Link href="/" className="small">
+        Back to events
+      </Link>
     </div>
   );
 }
