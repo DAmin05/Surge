@@ -86,14 +86,14 @@ tickets=$(sql "SELECT count(*) FROM orders.tickets WHERE order_id = $order")
 pass "payment captured, webhook confirmed order $order: 2 tickets issued"
 
 # --- 6. seat events -------------------------------------------------------------
-events=$("${compose[@]}" exec -T redpanda timeout 20 rpk topic consume seat-events -o :end -f '%v\n' 2>/dev/null \
+events=$("${compose[@]}" exec -T redpanda timeout 20 rpk -X brokers=redpanda:9092 topic consume seat-events -o :end -f '%v\n' 2>/dev/null \
   | grep "\"eventId\":$event," | grep '"section":"A"' || true)
 types=$(grep -o '"type":"[A-Z_]*"' <<<"$events" | cut -d'"' -f4 | tr '\n' ' ')
 seqs=$(grep -o '"seq":[0-9]*' <<<"$events" | cut -d: -f2 | sort -n | tr '\n' ' ')
 for _ in $(seq 20); do
   [[ "$types" == *SEAT_SOLD* ]] && break
   sleep 0.5
-  events=$("${compose[@]}" exec -T redpanda timeout 20 rpk topic consume seat-events -o :end -f '%v\n' 2>/dev/null \
+  events=$("${compose[@]}" exec -T redpanda timeout 20 rpk -X brokers=redpanda:9092 topic consume seat-events -o :end -f '%v\n' 2>/dev/null \
     | grep "\"eventId\":$event," | grep '"section":"A"' || true)
   types=$(grep -o '"type":"[A-Z_]*"' <<<"$events" | cut -d'"' -f4 | tr '\n' ' ')
 done

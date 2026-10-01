@@ -34,7 +34,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable
 
-CHAOS = os.environ.get("CHAOS_URL", "http://localhost:8002")
+CHAOS = os.environ.get("CHAOS_URL", f"http://localhost:{os.environ.get('CHAOS_PORT', '8002')}")
 DB = os.environ.get("POSTGRES_DB", "surge")
 ADMIN = os.environ.get("POSTGRES_ADMIN_USER", "surge_admin")
 COMPOSE = ["docker", "compose"]
