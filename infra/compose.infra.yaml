@@ -95,10 +95,10 @@ services:
       - --memory=1G
       - --overprovisioned
       - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:${REDPANDA_PORT:-19092}
       - --rpc-addr=redpanda:33145
       - --advertise-rpc-addr=redpanda:33145
-    ports: ["19092:19092"]
+    ports: ["${REDPANDA_PORT:-19092}:19092"]
     volumes: [redpanda:/var/lib/redpanda/data]
     healthcheck:
       test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
@@ -125,7 +125,7 @@ services:
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-surge_admin}
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-surge_admin_dev}
     command: ["postgres", "-c", "max_connections=300"]
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
     volumes: [postgres:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -198,7 +198,7 @@ services:
     image: ghcr.io/shopify/toxiproxy:2.12.0
     restart: unless-stopped
     command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
-    ports: ["8474:8474"]
+    ports: ["${TOXIPROXY_PORT:-8474}:8474"]
     volumes: ["./toxiproxy:/config:ro"]
     healthcheck:
       test: ["CMD", "/toxiproxy-cli", "list"]
@@ -210,7 +210,7 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.9.0
     restart: unless-stopped
-    ports: ["16686:16686"]
+    ports: ["${JAEGER_PORT:-16686}:16686"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:16686/"]
       interval: 3s
@@ -223,7 +223,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.enable-lifecycle
-    ports: ["9090:9090"]
+    ports: ["${PROMETHEUS_PORT:-9090}:9090"]
     volumes: ["./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
@@ -238,7 +238,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-    ports: ["3001:3000"]
+    ports: ["${GRAFANA_PORT:-3001}:3000"]
     volumes:
       - "./grafana/provisioning:/etc/grafana/provisioning:ro"
       - "./grafana/dashboards:/var/lib/grafana/dashboards:ro"

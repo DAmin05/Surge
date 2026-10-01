@@ -37,7 +37,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from chaos_run import COMPOSE, Failed, chaos, internal, scalar, seed, sh, sql  # noqa: E402
 
-PROM = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
+PROM = os.environ.get("PROMETHEUS_URL", f"http://localhost:{os.environ.get('PROMETHEUS_PORT', '9090')}")
 OUT = "docs/results/headline"
 
 

@@ -302,6 +302,7 @@ change:
 | `RECONCILER_CHECK_INTERVAL` | `PT5S` | How often the invariants run |
 | `KAFKA_PARTITIONS` | `12` | Partitions per topic |
 | `GATEWAY_PORT` | `8080` | Host port the gateway (web app and API) is published on; the scripts use it too |
+| `POSTGRES_PORT`, `REDPANDA_PORT`, `JAEGER_PORT`, `PROMETHEUS_PORT`, `GRAFANA_PORT`, `CHAOS_PORT`, `TOXIPROXY_PORT` | `5432`, `19092`, `16686`, `9090`, `3001`, `8002`, `8474` | The other host ports; change one if something on your machine already uses it |
 | `NOFILE` | `65536` | File-descriptor limit for the gateway (lower it if Docker refuses) |
 | `POSTGRES_*`, `*_PASSWORD` | dev values | Admin and per-service database roles |
 | `PAYMENT_WEBHOOK_SECRET` | dev value | HMAC key for Payment → Order webhooks |
@@ -336,11 +337,12 @@ Durations are ISO-8601 (`PT10S`, `PT2M`).
 
 ## Troubleshooting
 
-- **`Bind for 0.0.0.0:8080 failed: port is already allocated`**: something else on your
-  machine is using port 8080 (`lsof -nP -iTCP:8080 -sTCP:LISTEN` shows what). Stop it, or
-  publish the gateway on another port: `export GATEWAY_PORT=8081`, then `make up`,
-  `make smoke` and open http://localhost:8081. Keep the variable set for the other
-  targets too, since the scripts read it.
+- **`Bind for 0.0.0.0:<port> failed: port is already allocated`**: something else on your
+  machine already uses that port (`lsof -nP -iTCP:<port> -sTCP:LISTEN` shows what; often a
+  local Postgres on 5432). Stop it, or move Surge's side with the matching variable from
+  [Configuration](#configuration), e.g. `export GATEWAY_PORT=8081 POSTGRES_PORT=5433`,
+  then `make up`. Keep the variables exported for the other targets too, since the
+  scripts read them; with `GATEWAY_PORT=8081` the web app is at http://localhost:8081.
 - **`mapfile: command not found` or other bash errors on macOS**: the scripts work with
   the bash 3.2 that ships with macOS. If you see this, you are on an older checkout;
   pull `main`, or `brew install bash`.
