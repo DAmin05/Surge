@@ -27,7 +27,7 @@ primary killed at peak, still 0 oversold and no stall
 - [Troubleshooting](#troubleshooting)
 - [Repository layout](#repository-layout)
 - [Documentation](#documentation)
-- [Roadmap](#roadmap)
+
 
 ## The one guarantee
 
@@ -186,8 +186,6 @@ Local toolchains for `make test`: JDK 21 (Gradle wrapper included), Rust stable,
 | `make saga-storm` | Buyers against a faulty Payment (declines, stalls past the timeout, duplicate and out-of-order callbacks), with checkout retries: every order terminal, 0 violations. Start the stack with `PAYMENT_TIMEOUT=PT10S PIN_GRACE=PT10S` |
 
 ### The exit criteria (all required CI checks)
-
-Each roadmap week shipped as one PR whose exit criterion is a CI job:
 
 | CI check | Criterion | Run locally |
 |---|---|---|
@@ -402,23 +400,3 @@ docs/               design spec, ADRs, results
   [one trace across all services](docs/results/week4-trace.md) ·
   [chaos under load](docs/results/week5-chaos.md) ·
   [headline sell-out](docs/results/week6-headline.md)
-
-## Roadmap
-
-Each phase shipped as one PR whose exit criterion is a required CI check.
-
-- [x] **Week 0**: monorepo, Compose stack, Flyway migrations, CI skeleton.
-  *Exit: `docker compose up` brings everything healthy.*
-- [x] **Week 1**: Inventory (Lua holds, sweeper) + Order happy path + seat claim.
-  *Exit: 1,000 virtual threads race for 1 seat → exactly 1 winner.*
-- [x] **Week 2**: Payment mock, saga, outbox relay, idempotency, Reconciler v1.
-  *Exit: same checkout retried 100× → 1 order; injected failures all end terminal.*
-- [x] **Week 3**: Admission, Rust gateway (tokens, rate limit, WS fan-out).
-  *Exit: 10k WebSocket clients get seat updates < 200 ms p99 locally.*
-- [x] **Week 4**: Frontend (buyer flow, war room, chaos panel), OTel, metrics.
-  *Exit: full buyer flow in the browser; one trace spans all services.*
-- [x] **Week 5**: k6 scenarios, chaos scenarios, tuning.
-  *Exit: 20 chaos runs, 0 invariant violations.*
-- [ ] **Week 6**: headline load test, results, demo video, deployment.
-  *Exit: published numbers, graphs and ADRs.* Headline test, results, graphs and ADRs
-  are done; the demo video and deployment are still to come.
